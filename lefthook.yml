@@ -1,0 +1,15 @@
+# Git hooks. `lefthook install` sets them up once per clone; every worktree then uses them.
+# `gitmoji` must be on PATH.
+
+pre-commit:
+  commands:
+    gitmoji-staged:
+      # Says when the staged files look like more than one commit.
+      run: gitmoji staged
+
+commit-msg:
+  commands:
+    gitmoji-check:
+      # Writes emojis for typed shortcodes, closes the message with the version line, and
+      # refuses a message that is not in the convention.
+      run: gitmoji check --fix {1}
