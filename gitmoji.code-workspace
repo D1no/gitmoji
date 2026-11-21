@@ -1,0 +1,25 @@
+{
+  // One root per area, so that search, the file tree and tasks follow who owns what.
+  // The repository root comes first: rust-analyzer resolves paths from the first root.
+  "folders": [
+    { "name": "🏠 repository", "path": "." },
+    { "name": "🧩 package", "path": "package" },
+    { "name": "🤖 skills", "path": "skills" },
+    { "name": "🎨 website", "path": "website" },
+    { "name": "📝 docs", "path": "docs" }
+  ],
+  "settings": {
+    "rust-analyzer.linkedProjects": ["package/Cargo.toml"],
+    "files.exclude": { "**/target": true, "**/dist": true, "**/storybook-static": true },
+    "search.exclude": { "**/target": true, "**/references/vocabulary.txt": true },
+    "editor.formatOnSave": true
+  },
+  "extensions": {
+    "recommendations": [
+      "rust-lang.rust-analyzer",
+      "tamasfe.even-better-toml",
+      "EditorConfig.EditorConfig",
+      "biomejs.biome"
+    ]
+  }
+}

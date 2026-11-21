@@ -1,0 +1,24 @@
+{
+  // A working environment for people and agents: the Rust toolchain the package pins,
+  // lefthook, and the gitmoji command built from this checkout.
+  "name": "gitmoji",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+  // Build output lives in a volume of this container's own, so it is fast, never mixes
+  // with a build made on the host, and two checkouts never share it.
+  "mounts": [
+    "source=gitmoji-target-${devcontainerId},target=${containerWorkspaceFolder}/package/target,type=volume"
+  ],
+  "postCreateCommand": ".devcontainer/setup.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "EditorConfig.EditorConfig"
+      ],
+      "settings": {
+        "rust-analyzer.linkedProjects": ["package/Cargo.toml"]
+      }
+    }
+  }
+}
