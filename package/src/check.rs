@@ -1,6 +1,6 @@
 //! Checks a whole commit message: the subject and the lines the body should carry.
 
-use crate::config::{Config, Level};
+use crate::config::{Config, Level, SignatureRule};
 use crate::subject::{self, Subject, Ticket};
 use crate::trailers::{VERSION_MARK, records, trailer};
 use crate::vocabulary::{Vocabulary, normalize};
@@ -341,6 +341,21 @@ enum MessageSource {
     Stored,
 }
 
+/// These identify a shell launched by one of the bundled signature helpers' harnesses.
+/// Authorship names and persistent preferences can also occur in a person's shell.
+fn in_agent_session() -> bool {
+    std::env::var_os("CLAUDECODE").as_deref() == Some(std::ffi::OsStr::new("1"))
+        || [
+            "CLAUDE_CODE_SESSION_ID",
+            "CLAUDE_CODE_ENTRYPOINT",
+            "CODEX_THREAD_ID",
+            "CODEX_SESSION_ID",
+            "ANTIGRAVITY_CONVERSATION_ID",
+        ]
+        .iter()
+        .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
+}
+
 fn leading_issue_reference(line: &str) -> Option<&str> {
     let rest = line.strip_prefix('#')?;
     let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
@@ -396,6 +411,7 @@ fn check_with_source(
         ));
     }
     let parsed = subject::parse(vocab, config, subject_line);
+    let is_marker = matches!(parsed, Ok(Subject::Marker(_)));
     let length = subject_line.trim().chars().count();
     if length > config.subject_max {
         let text = format!(
@@ -627,10 +643,20 @@ fn check_with_source(
         );
         report_at(&mut report, config.length, text);
     }
-    if config.signature != Level::Off && !signed {
+    let signature_level = match config.signature {
+        SignatureRule::Agents
+            if source == MessageSource::Draft && !is_marker && in_agent_session() =>
+        {
+            Level::Error
+        }
+        SignatureRule::Off | SignatureRule::Agents => Level::Off,
+        SignatureRule::Warn => Level::Warn,
+        SignatureRule::Error => Level::Error,
+    };
+    if signature_level != Level::Off && !signed {
         report_at(
             &mut report,
-            config.signature,
+            signature_level,
             "an agent signs the end of the body: an underscore on its own line, the model with its effort, the harness with its session, and where they apply lines for Sub-agents, Team and Research. Take every value from the harness's record with the script for your harness in the skill's scripts folder. Run `gitmoji guide message`".to_string(),
         );
     }

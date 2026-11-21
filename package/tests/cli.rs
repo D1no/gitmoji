@@ -83,6 +83,86 @@ fn check_fix_should_write_the_file_it_was_given() {
 }
 
 #[test]
+fn agent_only_signatures_apply_to_live_authored_messages() {
+    let repo = scratch("agent-signature");
+    git(&repo, &["init", "-q"]);
+    std::fs::write(repo.join("gitmoji.toml"), "[rules]\nsignature = 'agents'\n").unwrap();
+    let markers = [
+        ("CLAUDECODE", "1"),
+        ("CLAUDE_CODE_SESSION_ID", "test-session"),
+        ("CLAUDE_CODE_ENTRYPOINT", "cli"),
+        ("CODEX_THREAD_ID", "test-thread"),
+        ("CODEX_SESSION_ID", "test-session"),
+        ("ANTIGRAVITY_CONVERSATION_ID", "test-session"),
+    ];
+    let run = |args: &[&str], session: Option<(&str, &str)>| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_gitmoji"));
+        cmd.current_dir(&repo).args(args);
+        for (key, _) in markers {
+            cmd.env_remove(key);
+        }
+        if let Some((key, value)) = session {
+            cmd.env(key, value);
+        }
+        cmd.output().unwrap()
+    };
+    let draft = repo.join("draft");
+    let subject = "🧩👔 #3 (server): allow an appeal";
+    let message = format!("{subject}\n\nCustomers need time to reply.\n");
+    std::fs::write(&draft, &message).unwrap();
+    for session in [
+        None,
+        Some(("CLAUDECODE", "0")),
+        Some(("CODEX_THREAD_ID", "")),
+    ] {
+        let human = run(&["check", "draft"], session);
+        assert!(human.status.success(), "{}", text(&human));
+    }
+    for session in markers {
+        let agent = run(&["check", "draft"], Some(session));
+        assert!(!agent.status.success() && text(&agent).contains("an agent signs"));
+    }
+
+    let session = Some(("CLAUDECODE", "1"));
+    let unsigned = run(&["check", "--fix", "draft"], session);
+    assert!(!unsigned.status.success() && text(&unsigned).contains("an agent signs"));
+    let stamped = run(&["check", "draft"], session);
+    assert!(!stamped.status.success() && text(&stamped).contains("an agent signs"));
+
+    std::fs::write(
+        &draft,
+        format!("{message}\n_\nexample-model (high)\nClaude Code\n"),
+    )
+    .unwrap();
+    for args in [
+        vec!["check", "draft"],
+        vec!["check", "--fix", "draft"],
+        vec!["check", "draft"],
+    ] {
+        let signed = run(&args, session);
+        assert!(signed.status.success(), "{}", text(&signed));
+    }
+    assert!(std::fs::read_to_string(&draft).unwrap().contains("\n△ `"));
+    for subject in [
+        "🔺 gitmoji `1.0.0`: adopt the release",
+        "🔖 release 1.0.0",
+        "Merge branch 'topic'",
+        "Revert \"Allow an appeal\"",
+        "fixup! Allow an appeal",
+    ] {
+        std::fs::write(&draft, subject).unwrap();
+        let exempt = run(&["check", "--fix", "draft"], session);
+        assert!(exempt.status.success(), "{subject}: {}", text(&exempt));
+    }
+    assert!(run(&["check", "-m", subject], session).status.success());
+
+    git(&repo, &["commit", "--allow-empty", "-qm", &message]);
+    let history = run(&["history", "HEAD"], session);
+    assert!(history.status.success(), "{}", text(&history));
+    std::fs::remove_dir_all(repo).unwrap();
+}
+
+#[test]
 fn reject_a_ticket_led_draft_and_preserve_the_stored_history() {
     let repo = scratch("ticket-at-line-start");
     git(&repo, &["init", "-q"]);

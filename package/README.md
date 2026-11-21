@@ -37,6 +37,33 @@ For private branch work, `git commit --amend` can reword the tip. In a linear
 branch, use `git rebase -i trunk` and select `reword` to edit an older message.
 Choose the actual base branch for either command. History inspection is read-only.
 
+## Requiring signatures from agents
+
+The settings installed by `gitmoji init` use this policy. Existing repositories can
+select it in their settings:
+
+```toml
+[rules]
+signature = "agents"
+```
+
+During `gitmoji check <file>` and `check --fix <file>`, ordinary commits from
+Claude Code, Codex and Antigravity must include the model and harness lines.
+The checker accepts a signature under either the draft underscore or the
+stamped version line. A person's commit can have the version line alone.
+Release and adoption markers and Git-generated messages pass without signatures.
+
+Detection uses `CLAUDECODE=1` or a nonempty `CLAUDE_CODE_SESSION_ID`,
+`CLAUDE_CODE_ENTRYPOINT`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID` or
+`ANTIGRAVITY_CONVERSATION_ID` in the committing process. A launcher that
+clears its session markers leaves Gitmoji without that evidence.
+`[agents].markers` matches names and email addresses for the separate
+author/co-author rule. History has no record of the committing shell, so
+`signature = "agents"` adds no retrospective signature requirement.
+The existing `warn` and `error` settings check unsigned commits regardless of
+the author's shell, including during history checks. Omitting the setting
+keeps signature checking off.
+
 ## Merge captions
 
 `gitmoji merge-caption --pr 42 --title 'Give reviewers a preview' BASE HEAD`

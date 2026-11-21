@@ -19,6 +19,21 @@ pub enum Level {
     Error,
 }
 
+/// Who should supply the model and harness lines in a commit message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SignatureRule {
+    /// Accept unsigned messages.
+    #[default]
+    Off,
+    /// Warn for any unsigned message.
+    Warn,
+    /// Refuse any unsigned message.
+    Error,
+    /// Refuse an unsigned authored draft from a recognized agent shell.
+    Agents,
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawTicket {
@@ -42,7 +57,7 @@ struct RawRules {
     one_scope: Option<Level>,
     unusual: Option<Level>,
     agent_author: Option<Level>,
-    signature: Option<Level>,
+    signature: Option<SignatureRule>,
     length: Option<Level>,
     description: Option<Level>,
     stamp: Option<bool>,
@@ -102,7 +117,7 @@ pub struct Config {
     /// How an agent named as author or co-author is treated.
     pub agent_author: Level,
     /// How a commit without an agent's signature block (model and harness lines) is treated.
-    pub signature: Level,
+    pub signature: SignatureRule,
     /// How a summary or a body that is too long is treated.
     pub length: Level,
     /// How a commit by a person or an agent with nothing under its first line is treated.
@@ -210,7 +225,7 @@ impl Config {
             one_scope: raw.rules.one_scope.unwrap_or_default(),
             unusual: raw.rules.unusual.unwrap_or_default(),
             agent_author: raw.rules.agent_author.unwrap_or(Level::Error),
-            signature: raw.rules.signature.unwrap_or(Level::Off),
+            signature: raw.rules.signature.unwrap_or_default(),
             vocabulary_version: raw.vocabulary.version,
             length: raw.rules.length.unwrap_or_default(),
             description: raw.rules.description.unwrap_or(Level::Error),
@@ -255,7 +270,7 @@ impl Config {
     #[must_use]
     pub fn for_a_subject_alone(mut self) -> Self {
         self.description = Level::Off;
-        self.signature = Level::Off;
+        self.signature = SignatureRule::Off;
         self
     }
 
