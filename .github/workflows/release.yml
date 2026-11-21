@@ -1,0 +1,117 @@
+# Publishes a release when a version is tagged: one binary per platform, their
+# checksums, and notes taken from CHANGELOG.md. See .github/README.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, runner: macos-latest, native: true }
+          - { target: x86_64-apple-darwin, runner: macos-latest, native: false }
+          - { target: x86_64-unknown-linux-musl, runner: ubuntu-latest, native: true }
+          - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm, native: true }
+          - { target: x86_64-pc-windows-msvc, runner: windows-latest, native: true }
+    defaults:
+      run:
+        shell: bash
+        working-directory: package
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal --target "$TARGET"
+
+      - name: Install the musl linker
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q musl-tools
+
+      - name: Test
+        if: matrix.native
+        run: cargo test --all-targets --locked
+
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: Run the built command
+        if: matrix.native
+        run: |
+          built="target/$TARGET/release/gitmoji"
+          "$built" --version
+          "$built" vocabulary
+          # A subject this repository's own settings accept: the command reads them here.
+          "$built" check -m '🧩👔 #2 (package): allow an appeal within 30 days of refusal'
+
+      - name: Name the file for the release
+        run: |
+          mkdir -p ../dist
+          if [ -f "target/$TARGET/release/gitmoji.exe" ]; then
+            cp "target/$TARGET/release/gitmoji.exe" "../dist/gitmoji-$TARGET.exe"
+          else
+            cp "target/$TARGET/release/gitmoji" "../dist/gitmoji-$TARGET"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gitmoji-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Check that the tag matches the crate
+        run: |
+          crate=$(sed -n 's/^version = "\(.*\)"/\1/p' package/Cargo.toml | head -1)
+          if [ "v$crate" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match the crate version $crate." >&2
+            exit 1
+          fi
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          cd dist
+          chmod +x gitmoji-*
+          sha256sum gitmoji-* > SHA256SUMS
+          ls -l
+          # The release notes are the changelog's entry for this version.
+          awk -v v="$version" '
+            $1 == "##" && $2 == v { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' ../CHANGELOG.md > notes.md
+          # A release without its changelog entry is not published.
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no entry for $version." >&2
+            exit 1
+          fi
+          printf '\nFull history: [CHANGELOG.md](https://github.com/%s/blob/trunk/CHANGELOG.md)\n' "$GITHUB_REPOSITORY" >> notes.md
+          gh release create "$GITHUB_REF_NAME" --title "gitmoji $version" \
+            --notes-file notes.md --verify-tag gitmoji-* SHA256SUMS

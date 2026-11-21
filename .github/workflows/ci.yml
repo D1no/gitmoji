@@ -1,0 +1,140 @@
+# Runs on every push and pull request. Each job runs the commands a contributor runs
+# locally; see .github/README.md for what each job does and does not prove.
+name: CI
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+        working-directory: package
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal --component rustfmt,clippy
+
+      - name: Format
+        run: cargo fmt -- --check
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --all-targets --locked
+
+  coverage:
+    # How much of the command the tests exercise, and how many tests and scenarios
+    # there are. The report is on the run's summary page; the raw data is an artifact.
+    name: coverage and scenarios
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: package
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal --component llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked --version 0.6.21
+
+      - name: Measure coverage
+        run: |
+          cargo llvm-cov --all-targets --locked --lcov --output-path lcov.info
+          cargo llvm-cov report --summary-only > coverage.txt
+
+      - name: Report
+        run: ../.github/scripts/report.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: |
+            package/lcov.info
+            package/coverage.txt
+
+  website:
+    name: website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v5
+        with:
+          package_json_file: website/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: website/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: website
+        run: pnpm install --frozen-lockfile
+
+      - name: Check and build the website
+        working-directory: website
+        run: pnpm check
+
+  pointers:
+    # The guides stay short by pointing at each other; a pointer that leads nowhere
+    # fails the build.
+    name: pointers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 .github/scripts/pointers.py
+
+  history:
+    # The repository is built with its own convention: every commit must pass the
+    # command built from the same checkout.
+    name: commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install the pinned Rust toolchain
+        working-directory: package
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal
+
+      - name: Build the command
+        working-directory: package
+        run: cargo build --locked
+
+      - name: Test the installed skill helpers in disposable repositories
+        run: |
+          export PATH="$PWD/package/target/debug:$PATH"
+          python3 -m unittest discover -s package/tests/python
+
+      - name: Check every commit of this repository
+        run: package/target/debug/gitmoji history
