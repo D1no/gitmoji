@@ -1,0 +1,10 @@
+# The page as a local container, for review on real devices through a gateway.
+# Bound to this machine only; whoever runs the gateway decides who may see it.
+services:
+  landingpage:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "127.0.0.1:${GITMOJI_LANDINGPAGE_PORT:-13004}:8080"
+    restart: unless-stopped

@@ -1,0 +1,11 @@
+{
+  "name": "gitmoji-website",
+  "private": true,
+  "packageManager": "pnpm@12.16.1",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "pnpm --dir landingpage dev",
+    "check": "pnpm --dir landingpage check",
+    "build": "pnpm --dir landingpage build"
+  }
+}

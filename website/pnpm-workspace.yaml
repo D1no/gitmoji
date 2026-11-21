@@ -1,0 +1,5 @@
+# What people read: the landing page now, the documentation site when it has content.
+packages:
+  - landingpage
+allowBuilds:
+  esbuild: true
