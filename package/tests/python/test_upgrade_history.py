@@ -149,6 +149,87 @@ class UpgradeHistory(unittest.TestCase):
                 self.assertEqual([r['subject_new'] for r in rows],
                                  ['Revert #7 [`🎨✨`] Show preview', 'Reapply #7 [`🎨✨`] Show preview'])
 
+    def rewrite_fixture(self, change_tree=(), change_author=()):
+        """Rewrite the entire reachable DAG in order, preserving the original objects."""
+        remapped = {}
+        blob = upgrade.git('hash-object', '-w', '--stdin', data=b'shared content').strip()
+        for old in self.git('rev-list', '--reverse', '--topo-order', self.merge).splitlines():
+            fields, _, message = upgrade.read_commit(old)
+            rewritten = []
+            for field in fields:
+                if field.startswith(b'parent '):
+                    field = b'parent ' + remapped[field[7:].decode()].encode()
+                elif field.startswith(b'tree ') and old in change_tree:
+                    entries = upgrade.git('ls-tree', '-z', field[5:].decode())
+                    tree = upgrade.git('mktree', '-z', data=entries + b'100644 blob ' + blob + b'\tshared\0')
+                    field = b'tree ' + tree.strip()
+                elif field.startswith(b'author ') and old in change_author:
+                    field = field.replace(b'Contributor <', b'Another Contributor <')
+                rewritten.append(field)
+            if old == self.merge:
+                message = 'Merge #7 [`🎨✨`] Show preview\n'.encode()
+            raw = b'\n'.join(rewritten) + b'\n\n' + message + b'\nRewritten description.\n'
+            remapped[old] = upgrade.git('hash-object', '-w', '-t', 'commit', '--stdin', data=raw).decode().strip()
+            self.assertNotEqual(old, remapped[old])
+        self.assertEqual(self.git('rev-list', '--parents', '-1', remapped[self.merge]).split()[1:],
+                         [remapped[self.root], remapped[self.member]])
+        return remapped[self.merge]
+
+    def test_entire_dag_rewrite_accepts_matching_trees_or_unchanged_integration_deltas(self):
+        for altered, proof in (((), 'ordered parent trees'),
+                               ((self.root, self.member, self.merge), 'both ordered parents')):
+            with self.subTest(altered=altered):
+                tip = self.rewrite_fixture(change_tree=altered)
+                plan = self.execute(ref=tip, update_pr_titles=True)
+                self.assertEqual(plan['pr_title_summary'], {'to_change': 1, 'already_correct': 0, 'unmatched': 0})
+                [row] = plan['pr_title_updates']
+                self.assertIn(proof, row['evidence'])
+                self.assertEqual(row['after'], '[`🎨✨`] Show preview')
+                self.pr['title'] = row['after']
+                plan = self.execute(ref=tip, update_pr_titles=True)
+                self.assertEqual(plan['pr_title_summary'], {'to_change': 0, 'already_correct': 1, 'unmatched': 0})
+                self.pr['title'] = 'Show preview'
+
+    def test_rewritten_parent_drift_and_different_attribution_stay_unmatched(self):
+        for trees, authors, expected in (
+                ((self.root,), (), 'changes from the first parent differ'),
+                ((self.member,), (), 'changes from the second parent differ'),
+                ((self.root, self.member, self.merge), (self.member,), 'author or author date differs at the second parent')):
+            with self.subTest(expected=expected):
+                tip = self.rewrite_fixture(trees, authors)
+                plan = self.execute(ref=tip, update_pr_titles=True)
+                self.assertEqual(plan['source_tip'], plan['candidate_tip'])
+                self.assertIn(expected, plan['review_or_changed_commits'][0]['review'])
+                self.assertEqual(plan['pr_title_summary'], {'to_change': 0, 'already_correct': 0, 'unmatched': 1})
+                self.assertFalse(plan['pr_title_updates'])
+
+    def test_empty_parent_deltas_cannot_confirm_different_snapshots(self):
+        self.git('switch', '-q', 'topic')
+        self.git('read-tree', '--reset', '-u', self.root)
+        self.git('commit', '-q', '--amend', '--allow-empty', '--no-edit')
+        self.member = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-q', 'main')
+        self.git('reset', '--hard', self.root)
+        self.git('merge', '--no-ff', 'topic', '-qm', 'Empty landing')
+        self.merge = self.git('rev-parse', 'HEAD')
+        self.pr['mergeCommit']['oid'] = self.merge
+        tip = self.rewrite_fixture(change_tree=(self.root, self.member, self.merge))
+        plan = self.execute(ref=tip, update_pr_titles=True)
+        self.assertIn('both parent changes are empty', plan['review_or_changed_commits'][0]['review'])
+        self.assertEqual(plan['pr_title_summary'], {'to_change': 0, 'already_correct': 0, 'unmatched': 1})
+
+    def test_title_summary_counts_only_selected_landings_and_unmatched_merges(self):
+        self.git('switch', '-qc', 'sync')
+        self.git('commit', '--allow-empty', '-qm', 'branch state')
+        self.git('switch', '-q', 'main')
+        self.git('merge', '--no-ff', '-qm', 'Sync branch', 'sync')
+        self.git('commit', '--allow-empty', '-qm', 'Rewind unknown change')
+        self.pr['title'] = '[`🎨✨`] Show preview'
+        full = self.execute(update_pr_titles=True)
+        self.assertEqual(full['pr_title_summary'], {'to_change': 0, 'already_correct': 1, 'unmatched': 1})
+        limited = self.execute(base=self.merge, update_pr_titles=True)
+        self.assertEqual(limited['pr_title_summary'], {'to_change': 0, 'already_correct': 0, 'unmatched': 1})
+
     def test_rewritten_legacy_title_recovered_with_and_without_old_objects(self):
         self.git('commit', '-q', '--amend', '-m', 'Merge #7 [`🎨✨`] Show preview (#7) (#7)')
         rewritten = self.git('rev-parse', 'HEAD')
