@@ -19,6 +19,12 @@ for the GitHub merge and history-upgrade helpers. To check commit
 history with this checkout's command, build it with `cargo build --locked` in
 `package/`, then run `package/target/debug/gitmoji history` from the root.
 
+## Pull request titles
+
+The [title workflow](workflows/pr-title.yml) refreshes the emoji prefix when a PR opens, reopens, receives commits or is edited. To rename a PR, edit its human title normally. Use **Create a merge commit** with the suggested message to keep the authored commits and the PR link.
+
+A failed **Gitmoji PR title** check contains the reason the title could not be updated. After correcting the title, repository permissions or runner access, rerun that check. The [setup guide](../skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles) lists the workflow permissions and merge settings.
+
 ## Releases (`workflows/release.yml`)
 
 The maintainer owns publication of each ready tool version. Push the reviewed
