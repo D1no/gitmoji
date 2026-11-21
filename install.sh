@@ -2,6 +2,7 @@
 # Install the `gitmoji` command and set a git repository up for Gitmoji Triangle.
 #
 #   ./install.sh [--overwrite] [path to the repository] [github|backlog]
+#   ./install.sh --pinned  (from a project checkout; installs only its adopted CLI)
 #
 # Needs git and curl: the command is one prebuilt file, downloaded from the GitHub release
 # that matches this clone and checked against the release's checksums.
@@ -13,6 +14,47 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
+if [ "${1:-}" = --pinned ]; then
+  if [ "$#" != 1 ]; then
+    echo "Usage: install.sh --pinned (run from the project checkout)" >&2
+    exit 2
+  fi
+  top=$(git rev-parse --show-toplevel)
+  # Match the CLI's settings precedence. Parse TOML before interpolating a tag.
+  version=$(python3 -I - "$top" <<'PYTHON'
+from pathlib import Path
+import re
+import sys
+try:
+    import tomllib
+except ImportError:
+    sys.exit("install.sh --pinned requires Python 3.11 or later")
+root = Path(sys.argv[1])
+settings = next((root / name for name in
+                 ("gitmoji.toml", ".config/gitmoji.toml", "triangle.toml")
+                 if (root / name).is_file()), None)
+if settings is None:
+    sys.exit("No Gitmoji settings found in the project")
+try:
+    with settings.open("rb") as source:
+        version = tomllib.load(source)["vocabulary"]["version"]
+except (OSError, ValueError, KeyError, TypeError) as error:
+    sys.exit(f"Cannot read [vocabulary].version from {settings}: {error}")
+if not isinstance(version, str) or not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}", version):
+    sys.exit(f"Expected a release number such as 1.2.3 in {settings}")
+print(version)
+PYTHON
+)
+  pinned=$(mktemp -d "${TMPDIR:-/tmp}/gitmoji-pinned.XXXXXX")
+  trap 'rm -rf "$pinned"' EXIT
+  trap 'exit 1' INT TERM
+  git -C "$pinned" init -q
+  git -C "$pinned" fetch -q --depth=1 --no-tags https://github.com/D1no/gitmoji.git "refs/tags/v$version"
+  git -C "$pinned" -c advice.detachedHead=false checkout -q --detach 'FETCH_HEAD^{commit}'
+  "$pinned/install.sh"
+  exit
+fi
+
 # Only 1 means yes. Any other value means no, so that a setting such as 0 or false can
 # never replace a working command.
 overwrite=${GITMOJI_OVERWRITE:-}
