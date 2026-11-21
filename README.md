@@ -48,6 +48,16 @@ On GitHub Actions, `echo "$checkout/bin" >> "$GITHUB_PATH"` makes the command
 available to later steps in the same job. The installer can build the command
 with Cargo when a prebuilt binary is unavailable.
 
+## Pull request titles
+
+An open pull request can show the intentions of its commits before you read the diff:
+
+```text
+[`🎨👷` / `✨🔧`] Preview on pull requests
+```
+
+Push another commit and Gitmoji refreshes the emoji prefix. Reviewers can edit the words. When the PR lands with GitHub’s merge button, the number appears once at the end, for example `(#42)`. Enable this with the [PR title workflow and merge settings](skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles).
+
 ## Guides
 
 | Guide | What it covers |
