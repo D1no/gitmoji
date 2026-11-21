@@ -10,7 +10,7 @@ example = "#123"
 allowed = ["repo", "package", "skills", "website", "docs", "ci"]
 
 [rules]
-signature = "warn"   # agents sign what went into a commit; a person's commit has no signature
+signature = "agents"   # agents sign what went into a commit; a person's commit has no signature
 
 # Which files belong to which scope, for `gitmoji staged`.
 [paths]
@@ -22,4 +22,4 @@ ci = [".github/"]
 
 # The Gitmoji release this repository has adopted. Change it with a 🔺 commit.
 [vocabulary]
-version = "0.14.0"
+version = "0.15.0"
