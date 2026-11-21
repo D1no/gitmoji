@@ -1,3 +1,4 @@
+# Managed by gitmoji init --github-workflows
 name: Gitmoji PR title
 
 on:
@@ -8,6 +9,9 @@ on:
 permissions:
   contents: read
   pull-requests: write
+
+env:
+  GITMOJI_VERSION: '0.15.0'
 
 jobs:
   title:
@@ -28,10 +32,12 @@ jobs:
           mkdir "$tool/home"
           clean=(env -i "PATH=$PATH" "HOME=$tool/home" GIT_CONFIG_NOSYSTEM=1
             GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0)
-          "${clean[@]}" git -c credential.helper= -c advice.detachedHead=false clone --quiet --depth 1 \
-            --branch v0.14.0 https://github.com/D1no/gitmoji.git "$tool/source"
+          "${clean[@]}" git init --quiet "$tool/source"
+          "${clean[@]}" git -C "$tool/source" -c credential.helper= fetch --quiet --depth=1 \
+            https://github.com/D1no/gitmoji.git "refs/tags/v$GITMOJI_VERSION"
+          "${clean[@]}" git -C "$tool/source" checkout --quiet --detach 'FETCH_HEAD^{commit}'
           "${clean[@]}" GITMOJI_BIN="$tool/bin" "$tool/source/install.sh"
-          test "$("$tool/bin/gitmoji" --version)" = 'gitmoji 0.14.0 (gitmoji-triangle)'
+          test "$("$tool/bin/gitmoji" --version)" = "gitmoji $GITMOJI_VERSION (gitmoji-triangle)"
           echo "path=$tool" >> "$GITHUB_OUTPUT"
 
       - name: Update the pull request title

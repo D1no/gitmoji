@@ -147,7 +147,12 @@ without your context, from guessing.
 ";
 
 /// Set up the repository that holds `path`.
-pub fn run(vocab: &Vocabulary, path: &Path, tickets: Tickets) -> Result<()> {
+pub fn run(
+    vocab: &Vocabulary,
+    path: &Path,
+    tickets: Tickets,
+    github_workflows: bool,
+) -> Result<()> {
     let top = repository_root(path)?;
     // Every file this run wrote or changed, relative to the repository. Only these are
     // offered for the commit: never a backup, a file someone added, or a file left alone.
@@ -168,6 +173,7 @@ pub fn run(vocab: &Vocabulary, path: &Path, tickets: Tickets) -> Result<()> {
     println!("4. Claude Code");
     write_claude_md(&top, &mut changed)?;
     write_claude_settings(&top, &mut changed)?;
+    write_workflows(&top, &paths, github_workflows, &mut changed)?;
 
     println!();
     let this = std::env::current_exe()
@@ -765,6 +771,131 @@ fn write_skill(
     Ok(())
 }
 
+const WORKFLOWS: &[(&str, &str)] = &[
+    (
+        ".github/workflows/pr-title.yml",
+        include_str!("../../.github/workflows/pr-title.yml"),
+    ),
+    (
+        ".github/workflows/check-commits.yml",
+        include_str!("../../.github/workflows/check-commits.yml"),
+    ),
+];
+const WORKFLOW_MARKER: &str = "# Managed by gitmoji init --github-workflows";
+const WORKFLOW_PIN: &str = "  GITMOJI_VERSION: ";
+
+/// Only numbered release tags from the public Gitmoji repository may supply executable code.
+fn workflow_version(top: &Path) -> Result<String> {
+    let path =
+        locate(top).context("GitHub workflows need a gitmoji.toml with [vocabulary].version")?;
+    let version = Config::load(&path)?.vocabulary_version.with_context(|| {
+        format!(
+            "set [vocabulary].version in {} before installing the GitHub workflows",
+            path.display()
+        )
+    })?;
+    let numbers: Vec<_> = version
+        .split('.')
+        .map(|part| {
+            if part.is_empty()
+                || !part.bytes().all(|c| c.is_ascii_digit())
+                || (part.len() > 1 && part.starts_with('0'))
+            {
+                return None;
+            }
+            part.parse::<u64>().ok()
+        })
+        .collect();
+    match numbers.as_slice() {
+        [Some(major), Some(minor), Some(_)] if (*major, *minor) >= (0, 14) => Ok(version),
+        _ => bail!(
+            "the GitHub workflows need a numbered Gitmoji release at least 0.14.0 in {} (found {version:?})",
+            path.display()
+        ),
+    }
+}
+
+/// Only the release pin varies between the shipped workflow and the installed copy.
+fn pin_workflow(template: &str, version: &str) -> String {
+    let mut result = String::new();
+    for line in template.lines() {
+        if line.starts_with(WORKFLOW_PIN) {
+            result.push_str(&format!("{WORKFLOW_PIN}'{version}'"));
+        } else {
+            result.push_str(line);
+        }
+        result.push('\n');
+    }
+    result
+}
+
+/// Take ownership of a workflow only on request. Later runs refresh workflows
+/// bearing our header; an unrelated job at the same path is left alone.
+fn write_workflows(
+    top: &Path,
+    paths: &SkillPaths,
+    requested: bool,
+    changed: &mut Vec<String>,
+) -> Result<()> {
+    for &(name, template) in WORKFLOWS {
+        let file = top.join(name);
+        if !requested && !file.is_file() {
+            continue;
+        }
+        // A project's workflow directory can be a link. Never read or replace
+        // workflow content outside its literal path, including a linked backup.
+        if Path::new(name)
+            .ancestors()
+            .any(|part| top.join(part).is_symlink())
+        {
+            if requested {
+                bail!("cannot install {name} through a symbolic link");
+            }
+            continue;
+        }
+        paths.resolve(name)?;
+        let old = read_if_present(&file)?;
+        let managed = old.as_deref().and_then(|text| text.lines().next()) == Some(WORKFLOW_MARKER);
+        if !requested && !managed {
+            continue;
+        }
+        if staged(top, name)? {
+            println!(
+                "   {name} has staged changes; left as it is. Commit or unstage it before updating the workflow"
+            );
+            continue;
+        }
+        let version = workflow_version(top)?;
+        let content = pin_workflow(template, &version);
+        if let Some(old) = old {
+            if old.replace("\r\n", "\n") == content {
+                continue;
+            }
+            // A different pin alone is a normal upgrade. Keep all other prior
+            // content, including a customized or previously copied workflow.
+            if pin_workflow(&old, &version) != content {
+                let backup = format!("{name}.before-update");
+                let backup_file = top.join(&backup);
+                if backup_file.symlink_metadata().is_ok() || staged(top, &backup)? {
+                    println!(
+                        "   {name} and its existing {backup} were left alone. Compare them and move the backup before updating"
+                    );
+                    continue;
+                }
+                std::fs::copy(&file, &backup_file)
+                    .with_context(|| format!("cannot back up {name}"))?;
+                println!(
+                    "   kept the previous {name} in {backup}. Compare the files before committing"
+                );
+            }
+        }
+        write(&file, &content)?;
+        changed.push(name.to_owned());
+        println!("   wrote {name} for Gitmoji {version}");
+    }
+    Ok(())
+}
+
 /// Write `gitmoji.toml` when there is none. Says whether this run adopted the convention.
 fn write_settings(
     top: &Path,
@@ -1129,6 +1260,81 @@ mod tests {
             include_str!("../../skills/gitmoji/references/vocabulary.txt"),
             guide::all(&vocab)
         );
+    }
+
+    #[test]
+    fn workflow_install_is_optional_and_refreshes_both_pins_from_repository_settings() {
+        let top = scratch("workflows");
+        git(&top, &["init", "-q"]).unwrap();
+        let paths = SkillPaths::new(&top).unwrap();
+        let mut changed = Vec::new();
+        write_workflows(&top, &paths, false, &mut changed).unwrap();
+        assert!(!top.join(".github").exists());
+
+        let title = WORKFLOWS[0].0;
+        let previous = "name: Project title workflow\n";
+        write(&top.join(title), previous).unwrap();
+        write(
+            &top.join(".config/gitmoji.toml"),
+            "[vocabulary]\nversion='0.14.0'",
+        )
+        .unwrap();
+        write_workflows(&top, &paths, true, &mut changed).unwrap();
+        assert_eq!(changed, [title, WORKFLOWS[1].0]);
+        assert_eq!(
+            std::fs::read_to_string(top.join(format!("{title}.before-update"))).unwrap(),
+            previous
+        );
+        for &(name, template) in WORKFLOWS {
+            assert_eq!(
+                std::fs::read_to_string(top.join(name)).unwrap(),
+                pin_workflow(template, "0.14.0")
+            );
+        }
+
+        changed.clear();
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='1.0.1'").unwrap();
+        write_workflows(&top, &paths, false, &mut changed).unwrap();
+        assert_eq!(changed.len(), 2);
+        for &(name, _) in WORKFLOWS {
+            assert!(
+                std::fs::read_to_string(top.join(name))
+                    .unwrap()
+                    .contains("GITMOJI_VERSION: '1.0.1'")
+            );
+        }
+        changed.clear();
+        write_workflows(&top, &paths, false, &mut changed).unwrap();
+        assert!(changed.is_empty());
+        std::fs::remove_dir_all(top).unwrap();
+    }
+
+    #[test]
+    fn workflow_install_rejects_invalid_release_pins_and_respects_staged_files() {
+        let top = scratch("workflow-conflicts");
+        git(&top, &["init", "-q"]).unwrap();
+        let title = WORKFLOWS[0].0;
+        write(&top.join(title), "name: staged workflow\n").unwrap();
+        git(&top, &["add", "--", title]).unwrap();
+        let paths = SkillPaths::new(&top).unwrap();
+        let mut changed = Vec::new();
+        for bad in ["1.2.3'\nmangled", "trunk", "0.13.3", "1.2", "+1.2.3"] {
+            write(
+                &top.join("gitmoji.toml"),
+                &format!("[vocabulary]\nversion={bad:?}"),
+            )
+            .unwrap();
+            assert!(write_workflows(&top, &paths, true, &mut changed).is_err());
+            assert!(!top.join(WORKFLOWS[1].0).exists());
+        }
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.0'").unwrap();
+        write_workflows(&top, &paths, true, &mut changed).unwrap();
+        assert_eq!(changed, [WORKFLOWS[1].0]);
+        assert_eq!(
+            std::fs::read_to_string(top.join(title)).unwrap(),
+            "name: staged workflow\n"
+        );
+        std::fs::remove_dir_all(top).unwrap();
     }
 
     #[test]

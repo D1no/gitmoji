@@ -92,6 +92,9 @@ enum Action {
         /// How the repository names its tickets.
         #[arg(long, value_enum, default_value = "github")]
         tickets: init::Tickets,
+        /// Install or update the GitHub workflows for PR titles and commit checks.
+        #[arg(long)]
+        github_workflows: bool,
     },
     /// Print the version of the vocabulary this command speaks.
     Vocabulary,
@@ -238,9 +241,19 @@ fn staged_files() -> Result<Vec<String>> {
 
 fn run(cli: Cli) -> Result<ExitCode> {
     let vocab = Vocabulary::builtin()?;
-    if let Action::Init { path, tickets } = &cli.command {
+    if let Action::Init {
+        path,
+        tickets,
+        github_workflows,
+    } = &cli.command
+    {
         // Before the settings are read: a repository that has none yet is the usual case.
-        init::run(&vocab, path.as_deref().unwrap_or(Path::new(".")), *tickets)?;
+        init::run(
+            &vocab,
+            path.as_deref().unwrap_or(Path::new(".")),
+            *tickets,
+            *github_workflows,
+        )?;
         return Ok(ExitCode::SUCCESS);
     }
     let mut config = load_config(cli.config.as_deref())?;

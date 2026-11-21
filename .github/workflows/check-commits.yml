@@ -1,0 +1,60 @@
+# Managed by gitmoji init --github-workflows
+name: Gitmoji commit checks
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  GITMOJI_VERSION: '0.15.0'
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: gitmoji-check-commits-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # Install before checking out any files from a contributor.
+      - name: Install the trusted Gitmoji release
+        id: tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool=$(mktemp -d "$RUNNER_TEMP/gitmoji-check.XXXXXXXX")
+          mkdir "$tool/home"
+          clean=(env -i "PATH=$PATH" "HOME=$tool/home" GIT_CONFIG_NOSYSTEM=1
+            GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0)
+          "${clean[@]}" git init --quiet "$tool/source"
+          "${clean[@]}" git -C "$tool/source" -c credential.helper= fetch --quiet --depth=1 \
+            https://github.com/D1no/gitmoji.git "refs/tags/v$GITMOJI_VERSION"
+          "${clean[@]}" git -C "$tool/source" checkout --quiet --detach 'FETCH_HEAD^{commit}'
+          "${clean[@]}" GITMOJI_BIN="$tool/bin" "$tool/source/install.sh"
+          test "$("$tool/bin/gitmoji" --version)" = "gitmoji $GITMOJI_VERSION (gitmoji-triangle)"
+          echo "path=$tool" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the pull request history and Gitmoji settings
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /gitmoji.toml
+            /.config/gitmoji.toml
+            /triangle.toml
+
+      - name: Check every incoming commit
+        shell: bash
+        env:
+          TOOL: ${{ steps.tool.outputs.path }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: '"$TOOL/bin/gitmoji" history "$BASE..$HEAD"'
