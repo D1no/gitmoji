@@ -69,9 +69,9 @@ enum Action {
         #[arg(long)]
         unmigrated: bool,
     },
-    /// Print the merge subject for the authored commits that a pull request brings to its base.
+    /// Print the synchronized PR title for the authored commits arriving on its base.
     MergeCaption {
-        /// Include the number of recognized headings and the total in JSON.
+        /// Print JSON with the PR title, landed subject, and recognized and total commit counts.
         #[arg(long)]
         json: bool,
         /// The pull request number.
@@ -403,7 +403,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             if json {
                 println!("{}", serde_json::to_string(&caption)?);
             } else {
-                println!("{}", caption.subject);
+                println!("{}", caption.title);
             }
             Ok(ExitCode::SUCCESS)
         }

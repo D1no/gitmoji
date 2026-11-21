@@ -23,7 +23,8 @@ TITLE = "-a `shell` $(command) update"
 BASE = "a" * 40
 HEAD = "b" * 40
 ARGS = ["--repo", "team/project", "--pr", "42", "--hostname", "company.ghe.com"]
-SUBJECT = "Merge #42 [`🧱🛂`] " + TITLE
+CAPTION_TITLE = "[`🧱🛂`] " + TITLE
+SUBJECT = CAPTION_TITLE + " (#42)"
 
 
 def pull():
@@ -47,7 +48,7 @@ class GitHubMergeTests(unittest.TestCase):
         self.requests = []
         self.gitmoji_calls = []
         self.caption_problem = None
-        self.inventory = dict(subject=SUBJECT, recognized=1, total=6)
+        self.inventory = dict(title=CAPTION_TITLE, subject=SUBJECT, recognized=1, total=6)
         self.merged = {"merged": True, "sha": "c" * 40}
         mock = patch.object(adapter.subprocess, "run", side_effect=self.fake_run)
         mock.start()
@@ -215,6 +216,17 @@ class GitHubMergeTests(unittest.TestCase):
             adapter.main(ARGS)
         self.assertNotIn("PUT", [method for method, _ in self.requests])
 
+    def test_mismatched_subject_never_reaches_merge_endpoint(self):
+        _, apply = self.reviewed()
+        for fields in ({"subject": CAPTION_TITLE + " (#99)"}, {"title": ""}, {"title": None},
+                       {"title": "two\nlines", "subject": "two\nlines (#42)"}):
+            with self.subTest(fields=fields):
+                self.inventory = dict(title=CAPTION_TITLE, subject=SUBJECT, recognized=1, total=6)
+                self.inventory.update(fields)
+                with self.assertRaisesRegex(ValueError, "invalid merge subject"):
+                    adapter.main(ARGS + apply)
+                self.assertNotIn("PUT", [method for method, _ in self.requests])
+
     def test_invalid_title_never_reaches_command(self):
         self.pr["title"] = "title\nanother line"
         with self.assertRaisesRegex(ValueError, "single-line"):
@@ -249,7 +261,7 @@ class InstalledCaptionTests(unittest.TestCase):
                 with patch.object(adapter, "api", return_value={"data": {"repository": {"pullRequest": pr}}}), \
                         contextlib.redirect_stderr(io.StringIO()) as diagnostics:
                     preview = adapter.main(ARGS)
-                self.assertEqual(preview.splitlines()[0], "Merge #42 [`🎨✨`] Revert preview and add export")
+                self.assertEqual(preview.splitlines()[0], "[`🎨✨`] Revert preview and add export (#42)")
                 self.assertIn("Recognized tags in 1 of 2", diagnostics.getvalue())
                 self.assertNotIn("--expect-preview", preview)
             finally:

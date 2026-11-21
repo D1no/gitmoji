@@ -172,9 +172,12 @@ fn check_should_preserve_only_the_current_worktrees_pending_merge_message() {
             .success()
     );
     assert!(
-        !gitmoji(&worktree, &["check", "-m", "Preview environments (#61)"])
-            .status
-            .success()
+        !gitmoji(
+            &worktree,
+            &["check", "-m", "[`🎨✨`] Preview environments (#61)"]
+        )
+        .status
+        .success()
     );
     git(&worktree, &["merge", "--abort"]);
     let file = git_dir.join("COMMIT_EDITMSG");
@@ -232,7 +235,7 @@ fn history_should_count_commits_by_the_version_they_name() {
 #[test]
 fn history_recognizes_a_merge_by_its_parents_even_in_a_shallow_clone() {
     let repo = scratch("merge-parents");
-    let title = "Preview environments (#61)";
+    let title = "[`🎨✨`] Preview environments (#61)";
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["commit", "--allow-empty", "-qm", "root"]);
     git(&repo, &["checkout", "-qb", "topic"]);
@@ -325,7 +328,7 @@ fn merge_caption_reads_the_changes_arriving_on_the_actual_target() {
     assert!(inner.status.success(), "{}", text(&inner));
     assert_eq!(
         String::from_utf8(inner.stdout).unwrap(),
-        "Merge #2 [`🎨✨`] Show previews\n"
+        "[`🎨✨`] Show previews\n"
     );
     // The sync and inner merge have authored-looking headings. Neither is an authored commit.
     git(
@@ -364,7 +367,7 @@ fn merge_caption_reads_the_changes_arriving_on_the_actual_target() {
     assert!(outer.status.success(), "{}", text(&outer));
     assert_eq!(
         String::from_utf8(outer.stdout).unwrap(),
-        "Merge #3 [`🧱🎨` / `🛂✨`] --preview `show` $(literal)\n"
+        "[`🧱🎨` / `🛂✨`] --preview `show` $(literal)\n"
     );
     std::fs::remove_dir_all(repo).unwrap();
 }
@@ -425,7 +428,7 @@ fn caption_coverage_follows_the_physical_pr_history() {
     );
     assert!(result.status.success(), "{}", text(&result));
     let expected = serde_json::json!({
-        "subject": "Merge #7 [`🎨✨`] Preview", "recognized": 1, "total": 2
+        "subject": "[`🎨✨`] Preview (#7)", "title": "[`🎨✨`] Preview", "recognized": 1, "total": 2
     });
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap(),

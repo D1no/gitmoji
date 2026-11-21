@@ -196,11 +196,30 @@ def revert_origin(oid, parent, message, prs):
 
 def merge_caption(pr, parents):
     checked_title(pr['title'], 'pull request')
-    caption = run('gitmoji', 'merge-caption', '--pr', str(pr['number']), '--title=' + pr['title'],
-                  parents[0], parents[1]).rstrip(b'\n')
-    if not caption.startswith(f'Merge #{pr["number"]} '.encode()) or b'\n' in caption or b'\r' in caption:
-        raise ValueError('gitmoji merge-caption did not return the expected subject')
-    return caption
+    inventory = json.loads(run('gitmoji', 'merge-caption', '--json', '--pr', str(pr['number']),
+                               '--title=' + pr['title'], parents[0], parents[1]))
+    title = inventory.get('title') if isinstance(inventory, dict) else None
+    if not isinstance(title, str):
+        raise ValueError('gitmoji must supply the PR title and landed subject; check the CLI version')
+    checked_title(title, 'caption')
+    if inventory.get('subject') != f'{title} (#{pr["number"]})':
+        raise ValueError('gitmoji merge-caption returned an inconsistent landed subject')
+    return inventory
+
+
+def landing_title(subject, pr, oid):
+    # An individual landing's original heading can describe only that commit. Keep
+    # its own inventory and any other issue references when removing its PR decoration.
+    suffix = f' (#{pr["number"]})'
+    while subject.endswith(suffix) and subject[:-len(suffix)].strip():
+        subject = subject[:-len(suffix)]
+    legacy = subject.removeprefix(f'Merge #{pr["number"]} ')
+    if legacy != subject:
+        # With an empty range the CLI supplies just the human title. Let its vocabulary
+        # decide whether a bracket group is ours. Keep the original inventory on the undo.
+        if legacy == pr['title'] or merge_caption({**pr, 'title': subject}, (oid, oid))['title'] != subject:
+            subject = legacy
+    return checked_title(subject, 'landing commit')
 
 
 def proposal(oid, parents, message, prs):
@@ -211,7 +230,7 @@ def proposal(oid, parents, message, prs):
     if len(parents) == 2 and matches:
         pr = matches[0]
         number = pr['number']
-        caption = merge_caption(pr, parents)
+        caption = merge_caption(pr, parents)['subject'].encode()
         # The PR record supplies names even if the branch refs have been deleted.
         owner = (pr['headRepositoryOwner'] or {}).get('login')
         source = (owner + ':' if owner else '') + pr['headRefName']
@@ -225,9 +244,10 @@ def proposal(oid, parents, message, prs):
         pr, depth, target_parents, subject, kind = revert_origin(oid, parents[0], message, prs)
         verb = b'Revert' if depth % 2 else b'Reapply'
         if subject is None:
-            caption = verb + merge_caption(pr, target_parents)[len(b'Merge'):]
-        else:
-            caption = verb + f' #{pr["number"]} {subject}'.encode()
+            subject = merge_caption(pr, target_parents)['title']
+        elif kind == 'landing commit':
+            subject = landing_title(subject, pr, oid)
+        caption = verb + f' #{pr["number"]} {subject}'.encode()
         route = f'Target: {kind} of PR #{pr["number"]}.'
         introducing = prs.containing_pr(oid)
         if introducing and introducing['number'] != pr['number']:

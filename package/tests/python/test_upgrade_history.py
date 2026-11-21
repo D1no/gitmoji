@@ -110,6 +110,55 @@ class UpgradeHistory(unittest.TestCase):
             self.execute(apply='candidate')
         self.assertEqual(self.git('rev-parse', 'candidate'), new)
 
+    def test_native_and_legacy_landing_subjects_converge(self):
+        landed = '[`🎨✨`] Show preview (#7)'
+        for existing in ('Merge #7 [`🎨✨`] Show preview', landed):
+            with self.subTest(existing=existing):
+                self.git('reset', '--hard', self.merge)
+                self.git('commit', '-q', '--amend', '-m', existing, '-m', 'Keep these notes.')
+                merge = self.git('rev-parse', 'HEAD')
+                self.pr['mergeCommit']['oid'] = merge
+                self.pr['title'] = '[`🎨✨`] Show preview'
+                report = self.execute()
+                if existing == landed:
+                    self.assertEqual(report['candidate_tip'], merge)
+                else:
+                    self.assertEqual(report['review_or_changed_commits'][-1]['subject_new'], landed)
+                self.git('revert', '--no-edit', '-m', '1', merge)
+                self.git('revert', '--no-edit', 'HEAD')
+                rows = self.execute(base=merge)['review_or_changed_commits']
+                self.assertEqual([r['subject_new'] for r in rows],
+                                 ['Revert #7 [`🎨✨`] Show preview', 'Reapply #7 [`🎨✨`] Show preview'])
+
+    def test_one_parent_landing_subject_needs_review_and_undo_names_target_once(self):
+        self.git('switch', '-q', 'topic')
+        for existing, expected in (('Merge #7 [`🎨✨`] Show preview', '[`🎨✨`] Show preview'),
+                                   ('[`🎨✨`] Show preview (#7)', '[`🎨✨`] Show preview'),
+                                   ('Show preview (#12) (#7)', 'Show preview (#12)'),
+                                   ('Merge #7 into release', 'Merge #7 into release')):
+            with self.subTest(existing=existing):
+                self.git('commit', '-q', '--amend', '-m', existing)
+                target = self.git('rev-parse', 'HEAD')
+                self.pr['mergeCommit']['oid'] = target
+                self.git('revert', '--no-edit', target)
+                rows = self.execute()['review_or_changed_commits']
+                self.assertIn('one-parent', rows[0]['review'])
+                self.assertEqual(rows[1]['subject_new'], 'Revert #7 ' + expected)
+                self.git('reset', '--hard', target)
+
+    def test_untagged_merge_and_undo_carry_the_pr_number_once(self):
+        self.git('switch', '-q', 'topic')
+        self.git('commit', '-q', '--amend', '-m', 'Add preview')
+        self.git('switch', '-q', 'main')
+        self.git('reset', '--hard', self.root)
+        self.git('merge', '--no-ff', 'topic', '-qm', 'Merge the preview')
+        merge = self.git('rev-parse', 'HEAD')
+        self.pr['mergeCommit']['oid'] = merge
+        self.pr['title'] = 'Show preview (#7)'
+        self.git('revert', '--no-edit', '-m', '1', merge)
+        rows = self.execute()['review_or_changed_commits']
+        self.assertEqual([row['subject_new'] for row in rows], ['Show preview (#7)', 'Revert #7 Show preview'])
+
     def test_member_revert_can_reference_pr_without_implying_whole_pr(self):
         self.git('revert', '--no-edit', self.member)
         report = self.execute(base=self.merge)
@@ -277,7 +326,7 @@ class UpgradeHistory(unittest.TestCase):
             self.assertIn('Résumé'.encode(), buf.getvalue())
             report = json.loads(buf.getvalue())
         self.assertEqual(self.git('rev-parse', 'ascii-report'), report['candidate_tip'])
-        self.assertTrue(report['review_or_changed_commits'][-1]['subject_new'].endswith('Résumé'))
+        self.assertEqual(report['review_or_changed_commits'][-1]['subject_new'], '[`🎨✨`] Résumé (#7)')
 
     def test_unsuitable_historical_pr_title_goes_to_review(self):
         self.pr['title'] = 'Two\tcolumns'

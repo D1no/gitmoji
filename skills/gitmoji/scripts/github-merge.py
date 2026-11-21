@@ -108,9 +108,12 @@ def caption(pr):
     inventory = json.loads(output)
     if not isinstance(inventory, dict):
         raise ValueError("gitmoji returned an invalid caption inventory")
+    pr_title = inventory.get("title")
     subject = inventory.get("subject")
-    if not isinstance(subject, str) or not subject.startswith(f"Merge #{pr['number']} ") or "\n" in subject or "\r" in subject:
-        raise ValueError("gitmoji returned an invalid merge subject")
+    if (not isinstance(pr_title, str) or not pr_title.strip()
+            or any(unicodedata.category(c) in {"Cc", "Zl", "Zp"} for c in pr_title)
+            or subject != f"{pr_title} (#{pr['number']})"):
+        raise ValueError("gitmoji returned an invalid merge subject; use a CLI that supplies the PR title and landed subject")
     recognized, total = inventory.get("recognized"), inventory.get("total")
     if type(recognized) is not int or type(total) is not int or not 0 <= recognized <= total:
         raise ValueError("gitmoji returned invalid caption coverage")
