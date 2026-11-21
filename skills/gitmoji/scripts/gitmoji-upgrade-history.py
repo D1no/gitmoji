@@ -250,6 +250,49 @@ def landing_title(subject, pr, oid):
     return checked_title(subject, 'landing commit')
 
 
+def verify_rewritten_trees(original, oid, parents):
+    _, old_parents, _ = read_commit(original)
+    if len(old_parents) != 2:
+        raise ReviewNeeded(f'original landing {original} has {len(old_parents)} parents; expected two')
+    old_ids = [original, *old_parents]
+    new_ids = [oid, *parents]
+    old_trees, new_trees = [
+        git('rev-parse', *(item + '^{tree}' for item in ids)).splitlines()
+        for ids in (old_ids, new_ids)
+    ]
+    labels = ['merge result', 'first parent', 'second parent']
+    different = [label for label, old, new in zip(labels, old_trees, new_trees) if old != new]
+    if not different:
+        return 'matching merge and ordered parent trees'
+
+    # A repository-wide edit can change every snapshot while leaving both sides
+    # of the merge unchanged. Check each side separately, including paths,
+    # old and new blob IDs, file modes and deletions. Empty merges provide no
+    # independent patch evidence, even when their PR captions happen to agree.
+    prefix = f'original landing {original} has different trees ({", ".join(different)})'
+    has_changes = False
+    for label, old_parent, parent in zip(labels[1:], old_parents, parents):
+        old_delta = tree_changes(old_parent, original)
+        if old_delta != tree_changes(parent, oid):
+            raise ReviewNeeded(f'{prefix}; changes from the {label} differ')
+        if old_delta:
+            has_changes = True
+    if not has_changes:
+        raise ReviewNeeded(f'{prefix}; both parent changes are empty')
+
+    # The raw author header carries the identity, timestamp and zone. Matching
+    # this at all three positions corroborates the mapping independently of
+    # captions and patches, which can recur on different branches.
+    for label, before, after in zip(labels, old_ids, new_ids):
+        old_fields, _, _ = read_commit(before)
+        new_fields, _, _ = read_commit(after)
+        authors = [[field for field in fields if field.startswith(b'author ')]
+                   for fields in (old_fields, new_fields)]
+        if len(authors[0]) != 1 or authors[0] != authors[1]:
+            raise ReviewNeeded(f'{prefix}; author or author date differs at the {label}')
+    return 'matching changes from both ordered parents and matching author records'
+
+
 def verified_landing(oid, parents, message, prs):
     old = message.split(b'\n', 1)[0]
     matches = prs.by_oid.get(oid, [])
@@ -280,6 +323,7 @@ def verified_landing(oid, parents, message, prs):
     original = pr['mergeCommit']['oid']
     if len(prs.by_oid[original]) != 1:
         raise ReviewNeeded('multiple merged PRs claim the original landing')
+    object_evidence = ''
     # When the old objects are available, use them to rule out branch syncs,
     # squashes and different changes masquerading as a rewritten PR merge.
     if subprocess.run(['git', '--no-replace-objects', 'cat-file', '-e', original + '^{commit}'],
@@ -287,11 +331,7 @@ def verified_landing(oid, parents, message, prs):
         if subprocess.run(['git', '--no-replace-objects', 'merge-base', '--is-ancestor', original, prs.tip],
                           capture_output=True).returncode == 0:
             raise ReviewNeeded('GitHub’s actual merge is already in the source history')
-        _, old_parents, _ = read_commit(original)
-        if len(old_parents) != 2 or any(
-                git('rev-parse', left + '^{tree}') != git('rev-parse', right + '^{tree}')
-                for left, right in zip([oid, *parents], [original, *old_parents])):
-            raise ReviewNeeded('original merge and rewritten merge have different trees or parents')
+        object_evidence = '; ' + verify_rewritten_trees(original, oid, parents)
     caption = merge_caption(pr, parents)
     if not caption['recognized']:
         raise ReviewNeeded('caption has no corroborating commit inventory')
@@ -303,7 +343,7 @@ def verified_landing(oid, parents, message, prs):
         local = local[:-len(suffix)]
     if local != caption['title'].encode():
         raise ReviewNeeded('caption does not match the merged PR title and incoming inventory')
-    return pr, caption, 'unique caption matches merged PR title and incoming inventory'
+    return pr, caption, 'unique caption matches merged PR title and incoming inventory' + object_evidence
 
 
 def proposal(oid, parents, message, prs):
@@ -386,7 +426,9 @@ def make_candidate(args):
     commits = git('rev-list', '--reverse', '--topo-order', *revisions).decode().splitlines()
     prs = PullRequests(args.repo, args.hostname)
     prs.index_captions(tip)
+    title_preview = args.update_pr_titles or args.apply_pr_titles
     title_updates = []
+    already_correct = unmatched = 0
     remapped = {}
     changes = []
     signed = []
@@ -398,7 +440,9 @@ def make_candidate(args):
             new, reason, route = proposal(oid, parents, message, prs)
         except ReviewNeeded as error:
             new, reason, route = None, str(error), None
-        if new is not None and len(parents) == 2 and (args.update_pr_titles or args.apply_pr_titles):
+        if title_preview and new is None and (len(parents) >= 2 or oid in prs.by_oid):
+            unmatched += 1
+        if title_preview and new is not None and len(parents) == 2:
             # Every verified landing ends in exactly one same-PR suffix.
             title, number = new.decode().rsplit(' (#', 1)
             pr = prs.by_number[int(number[:-1])]
@@ -406,6 +450,8 @@ def make_candidate(args):
                 title_updates.append({'number': pr['number'], 'merge_commit': pr['mergeCommit']['oid'],
                                       'source_commit': oid, 'before': pr['title'], 'after': title,
                                       'evidence': reason})
+            else:
+                already_correct += 1
         if new is not None and new != subject:
             # Keep the original subject and complete body, including conflict notes and trailers.
             provenance = b'Source commit: ' + oid.encode() + b'\n'
@@ -463,7 +509,9 @@ def make_candidate(args):
             'candidate_tip': remapped.get(tip, tip), 'created_branch': args.apply,
             'review_or_changed_commits': changes, 'invalidated_signatures': signed,
             'blocked_mergetags_or_encodings': blocked}
-    if args.update_pr_titles or args.apply_pr_titles:
+    if title_preview:
+        result['pr_title_summary'] = {'to_change': len(title_updates), 'already_correct': already_correct,
+                                      'unmatched': unmatched}
         result['pr_title_updates'] = title_updates
         result['base'] = base if args.base else None
     if args.apply_pr_titles:

@@ -21,15 +21,15 @@ history with this checkout's command, build it with `cargo build --locked` in
 
 ## Incoming commit checks
 
-The [commit check workflow](workflows/check-commits.yml) validates the commits introduced by a pull request, from its base SHA to its head SHA. Open the **check** job under **Gitmoji commit checks** to see which commit failed and why. Correct that commit on the PR branch and push the revised history. The check runs again.
+The [commit check workflow](workflows/gitmoji-commits.yml) validates the commits introduced by a pull request, from its base SHA to its head SHA. Open the **gitmoji-commits** job under **Gitmoji commit checks** to see which commit failed and why. Correct that commit on the PR branch and push the revised history. The check runs again.
 
 When replacing an existing required check, let this job run on a PR first. Select its reported check name in the target branch’s rules and retire the former job after the new requirement is active. The [downstream setup guide](../skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles) covers project settings and installation.
 
 ## Pull request titles
 
-The [title workflow](workflows/pr-title.yml) refreshes the emoji prefix when a PR opens, reopens, receives commits or is edited. To rename a PR, edit its human title normally. Use **Create a merge commit** with the suggested message to keep the authored commits and the PR link.
+The [title workflow](workflows/gitmoji-pr-title.yml) refreshes the emoji prefix when a PR opens, reopens, receives commits or is edited. To rename a PR, edit its human title normally. Use **Create a merge commit** with the suggested message to keep the authored commits and the PR link.
 
-A failed **Gitmoji PR title** check contains the reason the title could not be updated. After correcting the title, repository permissions or runner access, rerun that check. The [setup guide](../skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles) lists the workflow permissions and merge settings.
+A failed **gitmoji-pr-title** check contains the reason the title could not be updated. After correcting the title, repository permissions or runner access, rerun that check. The [setup guide](../skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles) lists the workflow permissions and merge settings.
 
 ## Releases (`workflows/release.yml`)
 

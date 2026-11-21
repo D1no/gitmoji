@@ -14,7 +14,7 @@ The default run reads Git objects and the repository’s merged PRs. The JSON re
 Review these decisions against the linked PRs:
 
 - An exact match between a two-parent merge and a single merged PR’s recorded merge ID identifies the landing. The tool rebuilds the emoji inventory from the incoming commits. It preserves the original message and records the original commit ID and available branch names in a changed commit’s body.
-- An earlier history rewrite can change every merge ID. For a stored caption such as <code>Merge #42 [`🎨✨`] Show preview</code>, the tool also checks the merged PR in the selected repository, the human wording and the inventory recomputed from both parents. The source history must have a single merge claiming that caption. When the original landing object is available, its result tree and both parent trees must match the rewritten merge. Missing evidence or disagreement goes to review. A qualifying merge becomes <code>[`🎨✨`] Show preview (#42)</code>. Repeated trailing references to the integrating PR collapse to one.
+- An earlier history rewrite can change every merge ID. For a stored caption such as <code>Merge #42 [`🎨✨`] Show preview</code>, the tool also checks the merged PR in the selected repository, the human wording and the inventory recomputed from both parents. The source history must have a single merge claiming that caption. When the original landing object is available, Gitmoji compares the result tree and both parent trees in their original order. All three commit IDs can change. A rewrite may also change every snapshot, for example by adding the same unrelated file throughout history. In that case, Gitmoji checks the complete change from each parent to the merge, including paths, modes and blob IDs. At least one side must change, and the merge and its two parents must retain their corresponding Git author identities and dates. Missing evidence or disagreement goes to review. A qualifying merge becomes <code>[`🎨✨`] Show preview (#42)</code>. Repeated trailing references to the integrating PR collapse to one.
 - A merge that lands a rollback PR carries the integrating PR number at the end. Its individual undo commit can qualify separately. For example, when PR #31 rolls back PR #27, its integration row ends in `(#31)`. A proven undo inside it reads `Revert #27 …`, with `Introduced by PR #31.` in the body when GitHub associates that commit uniquely and confirms it appears in the PR.
 - An undo candidate needs a recognizable operation subject and one full Git revert target ID in its parent history. To prove the undo, the tool compares the complete inverse against the actual change using original Git trees. Every changed path, file mode and pair of blob IDs must match. An undo of a merge also needs Git’s first-parent mainline record. These checks apply at every step of a revert chain. Reverting the verified merge of PR #27 yields `Revert #27` followed by the target PR’s caption. Reverting that exact undo yields `Reapply #27`.
 - Intervening changes to other files can coexist with an exact undo. An edit elsewhere in the same affected file changes its blob ID and requires review, even when Git reversed the intended lines cleanly. Partial rollbacks, additional files, empty changes and unproved conflict resolutions also require review. A squash that both reverts a change and adds a feature keeps its original subject. A recorded one-parent PR landing always goes to review because it may be a squash or a rebase.
@@ -59,6 +59,16 @@ Use the same full clone and the same repository, host and revision range. This a
 tool=.claude/skills/gitmoji/scripts/gitmoji-upgrade-history.py
 python3 "$tool" --repo OWNER/REPO --ref trunk --update-pr-titles > titles.json
 ```
+
+Read `pr_title_summary` before interpreting an empty update list. The counts cover the selected revision range.
+
+| Field | What it counts |
+| --- | --- |
+| `to_change` | Verified landings whose hosted PR title would change |
+| `already_correct` | Verified landings whose hosted PR already has the proposed title |
+| `unmatched` | Local merge commits and recorded one-parent PR landings that need review; this can include branch syncs with no PR |
+
+For example, `{"to_change": 0, "already_correct": 12, "unmatched": 3}` means twelve hosted titles were verified. The three unresolved landings have review reasons in `review_or_changed_commits`. When an original merge is available but the trees differ, the reason names the original SHA and the evidence that failed.
 
 Inspect the `pr_title_updates` entries, including the PR number, the evidence, and each title before and after. Gitmoji takes the title from the landed caption and drops the trailing reference to the PR itself. When the changes are ready, use an account with pull request write access.
 

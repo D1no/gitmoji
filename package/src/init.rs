@@ -771,15 +771,29 @@ fn write_skill(
     Ok(())
 }
 
-const WORKFLOWS: &[(&str, &str)] = &[
-    (
-        ".github/workflows/pr-title.yml",
-        include_str!("../../.github/workflows/pr-title.yml"),
-    ),
-    (
-        ".github/workflows/check-commits.yml",
-        include_str!("../../.github/workflows/check-commits.yml"),
-    ),
+struct Workflow {
+    path: &'static str,
+    legacy_path: &'static str,
+    legacy_job: &'static str,
+    job: &'static str,
+    template: &'static str,
+}
+
+const WORKFLOWS: &[Workflow] = &[
+    Workflow {
+        path: ".github/workflows/gitmoji-pr-title.yml",
+        legacy_path: ".github/workflows/pr-title.yml",
+        legacy_job: "title",
+        job: "gitmoji-pr-title",
+        template: include_str!("../../.github/workflows/gitmoji-pr-title.yml"),
+    },
+    Workflow {
+        path: ".github/workflows/gitmoji-commits.yml",
+        legacy_path: ".github/workflows/check-commits.yml",
+        legacy_job: "check",
+        job: "gitmoji-commits",
+        template: include_str!("../../.github/workflows/gitmoji-commits.yml"),
+    },
 ];
 const WORKFLOW_MARKER: &str = "# Managed by gitmoji init --github-workflows";
 const WORKFLOW_PIN: &str = "  GITMOJI_VERSION: ";
@@ -829,69 +843,162 @@ fn pin_workflow(template: &str, version: &str) -> String {
     result
 }
 
-/// Take ownership of a workflow only on request. Later runs refresh workflows
-/// bearing our header; an unrelated job at the same path is left alone.
+/// A workflow belongs to the installer only while it carries the ownership line.
+/// Links, directories and files without the line are always project-owned.
+enum WorkflowFile {
+    Missing,
+    Managed(String),
+    ProjectOwned,
+}
+
+fn workflow_file(path: &Path) -> Result<WorkflowFile> {
+    match path.symlink_metadata() {
+        Ok(meta) if !meta.is_file() => return Ok(WorkflowFile::ProjectOwned),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(WorkflowFile::Missing);
+        }
+        Err(error) => {
+            return Err(error).with_context(|| format!("cannot inspect {}", path.display()));
+        }
+        Ok(_) => {}
+    }
+    let bytes = std::fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let header = bytes.split(|&b| b == b'\n').next().unwrap_or_default();
+    if header.strip_suffix(b"\r").unwrap_or(header) != WORKFLOW_MARKER.as_bytes() {
+        return Ok(WorkflowFile::ProjectOwned);
+    }
+    Ok(WorkflowFile::Managed(
+        String::from_utf8(bytes)
+            .with_context(|| format!("managed workflow {} is not UTF-8", path.display()))?,
+    ))
+}
+
+/// Claim a fresh workflow or backup name without replacing another writer's file.
+fn create_workflow_file(path: &Path, content: &str) -> Result<bool> {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::File::create_new(path) {
+        Ok(mut file) => {
+            file.write_all(content.as_bytes())
+                .with_context(|| format!("cannot write {}", path.display()))?;
+            Ok(true)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error).with_context(|| format!("cannot create {}", path.display())),
+    }
+}
+
+fn backup_workflow(top: &Path, name: &str, old: &str) -> Result<bool> {
+    let backup = format!("{name}.before-update");
+    let path = top.join(&backup);
+    if !staged(top, &backup)? {
+        if create_workflow_file(&path, old)? {
+            println!("   kept edits to {name} in {backup}. Compare the files before committing");
+            return Ok(true);
+        }
+        // A previous run may have backed up this file before encountering a
+        // conflicting destination. Reuse an identical regular file on retry.
+        if path.symlink_metadata()?.is_file() && std::fs::read(&path)? == old.as_bytes() {
+            return Ok(true);
+        }
+    }
+    println!(
+        "   {name} has edits and {backup} is already in use. Review the backup before updating"
+    );
+    Ok(false)
+}
+
 fn write_workflows(
     top: &Path,
     paths: &SkillPaths,
     requested: bool,
     changed: &mut Vec<String>,
 ) -> Result<()> {
-    for &(name, template) in WORKFLOWS {
-        let file = top.join(name);
-        if !requested && !file.is_file() {
+    if [".github", ".github/workflows"]
+        .iter()
+        .any(|name| top.join(name).is_symlink())
+    {
+        if requested {
+            bail!("cannot install Gitmoji workflows through a symbolic link");
+        }
+        return Ok(());
+    }
+    for workflow in WORKFLOWS {
+        let name = workflow.path;
+        let legacy_name = workflow.legacy_path;
+        let path = top.join(name);
+        let legacy_path = top.join(legacy_name);
+        let current = workflow_file(&path)?;
+        let legacy = workflow_file(&legacy_path)?;
+        if !requested
+            && !matches!(current, WorkflowFile::Managed(_))
+            && !matches!(legacy, WorkflowFile::Managed(_))
+        {
             continue;
         }
-        // A project's workflow directory can be a link. Never read or replace
-        // workflow content outside its literal path, including a linked backup.
-        if Path::new(name)
-            .ancestors()
-            .any(|part| top.join(part).is_symlink())
-        {
-            if requested {
-                bail!("cannot install {name} through a symbolic link");
-            }
+        if matches!(current, WorkflowFile::ProjectOwned) {
+            println!(
+                "   {name} belongs to the project. Choose a different path for it before installing the Gitmoji workflow"
+            );
             continue;
         }
         paths.resolve(name)?;
-        let old = read_if_present(&file)?;
-        let managed = old.as_deref().and_then(|text| text.lines().next()) == Some(WORKFLOW_MARKER);
-        if !requested && !managed {
-            continue;
-        }
-        if staged(top, name)? {
+        if staged(top, name)?
+            || (matches!(legacy, WorkflowFile::Managed(_)) && staged(top, legacy_name)?)
+        {
             println!(
-                "   {name} has staged changes; left as it is. Commit or unstage it before updating the workflow"
+                "   the workflow has staged changes; commit or unstage them before updating {name}"
             );
             continue;
         }
         let version = workflow_version(top)?;
-        let content = pin_workflow(template, &version);
-        if let Some(old) = old {
-            if old.replace("\r\n", "\n") == content {
+        let content = pin_workflow(workflow.template, &version);
+        let current_text = match current {
+            WorkflowFile::Managed(ref text) => Some(text),
+            _ => None,
+        };
+        if let WorkflowFile::Managed(ref text) = legacy {
+            // The 0.15.0 templates used generic job IDs. Preserve any edits
+            // beyond that rename and the routine pin change before retiring them.
+            let previous_template = content.replace(
+                &format!("\njobs:\n  {}:\n", workflow.job),
+                &format!("\njobs:\n  {}:\n", workflow.legacy_job),
+            );
+            if pin_workflow(text, &version) != previous_template
+                && !backup_workflow(top, legacy_name, text)?
+            {
                 continue;
             }
-            // A different pin alone is a normal upgrade. Keep all other prior
-            // content, including a customized or previously copied workflow.
-            if pin_workflow(&old, &version) != content {
-                let backup = format!("{name}.before-update");
-                let backup_file = top.join(&backup);
-                if backup_file.symlink_metadata().is_ok() || staged(top, &backup)? {
-                    println!(
-                        "   {name} and its existing {backup} were left alone. Compare them and move the backup before updating"
-                    );
-                    continue;
-                }
-                std::fs::copy(&file, &backup_file)
-                    .with_context(|| format!("cannot back up {name}"))?;
-                println!(
-                    "   kept the previous {name} in {backup}. Compare the files before committing"
-                );
-            }
         }
-        write(&file, &content)?;
-        changed.push(name.to_owned());
-        println!("   wrote {name} for Gitmoji {version}");
+        if let Some(old) = current_text
+            && pin_workflow(old, &version) != content
+            && !backup_workflow(top, name, old)?
+        {
+            continue;
+        }
+        if current_text.is_none_or(|old| old.replace("\r\n", "\n") != content) {
+            if current_text.is_some() {
+                write(&path, &content)?;
+            } else if !create_workflow_file(&path, &content)? {
+                println!("   {name} appeared during installation. Inspect it and rerun init");
+                continue;
+            }
+            changed.push(name.to_owned());
+            println!("   wrote {name} for Gitmoji {version}");
+        }
+        if matches!(legacy, WorkflowFile::Managed(_)) {
+            std::fs::remove_file(&legacy_path)
+                .with_context(|| format!("cannot retire {legacy_name}"))?;
+            if tracked(top, legacy_name) {
+                changed.push(legacy_name.to_owned());
+            }
+            println!(
+                "   migrated {legacy_name} to {name}. If you required Gitmoji's `{}` check, switch the requirement to `{}` after its first run. Keep any required project check of the same name.",
+                workflow.legacy_job, workflow.job
+            );
+        }
     }
     Ok(())
 }
@@ -1271,24 +1378,25 @@ mod tests {
         write_workflows(&top, &paths, false, &mut changed).unwrap();
         assert!(!top.join(".github").exists());
 
-        let title = WORKFLOWS[0].0;
+        let title = WORKFLOWS[0].path;
         let previous = "name: Project title workflow\n";
-        write(&top.join(title), previous).unwrap();
+        let generic = WORKFLOWS[0].legacy_path;
+        write(&top.join(generic), previous).unwrap();
         write(
             &top.join(".config/gitmoji.toml"),
             "[vocabulary]\nversion='0.14.0'",
         )
         .unwrap();
         write_workflows(&top, &paths, true, &mut changed).unwrap();
-        assert_eq!(changed, [title, WORKFLOWS[1].0]);
+        assert_eq!(changed, [title, WORKFLOWS[1].path]);
         assert_eq!(
-            std::fs::read_to_string(top.join(format!("{title}.before-update"))).unwrap(),
+            std::fs::read_to_string(top.join(generic)).unwrap(),
             previous
         );
-        for &(name, template) in WORKFLOWS {
+        for workflow in WORKFLOWS {
             assert_eq!(
-                std::fs::read_to_string(top.join(name)).unwrap(),
-                pin_workflow(template, "0.14.0")
+                std::fs::read_to_string(top.join(workflow.path)).unwrap(),
+                pin_workflow(workflow.template, "0.14.0")
             );
         }
 
@@ -1296,9 +1404,9 @@ mod tests {
         write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='1.0.1'").unwrap();
         write_workflows(&top, &paths, false, &mut changed).unwrap();
         assert_eq!(changed.len(), 2);
-        for &(name, _) in WORKFLOWS {
+        for workflow in WORKFLOWS {
             assert!(
-                std::fs::read_to_string(top.join(name))
+                std::fs::read_to_string(top.join(workflow.path))
                     .unwrap()
                     .contains("GITMOJI_VERSION: '1.0.1'")
             );
@@ -1310,10 +1418,143 @@ mod tests {
     }
 
     #[test]
+    fn plain_init_retires_only_enrolled_legacy_workflows_and_preserves_edits() {
+        let top = scratch("workflow-rename");
+        git(&top, &["init", "-q"]).unwrap();
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.1'").unwrap();
+        let title = &WORKFLOWS[0];
+        let check = &WORKFLOWS[1];
+        let customized = format!("{WORKFLOW_MARKER}\nname: extra project steps\n");
+        write(&top.join(title.legacy_path), &customized).unwrap();
+        let old_check = pin_workflow(check.template, "0.15.0")
+            .replace("\n  gitmoji-commits:\n", "\n  check:\n");
+        write(&top.join(check.legacy_path), &old_check).unwrap();
+        git(&top, &["add", ".github"]).unwrap();
+        git(
+            &top,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "old workflows",
+            ],
+        )
+        .unwrap();
+
+        let paths = SkillPaths::new(&top).unwrap();
+        let mut changed = Vec::new();
+        write_workflows(&top, &paths, false, &mut changed).unwrap();
+        assert_eq!(
+            changed,
+            [title.path, title.legacy_path, check.path, check.legacy_path]
+        );
+        for workflow in WORKFLOWS {
+            let installed = std::fs::read_to_string(top.join(workflow.path)).unwrap();
+            assert!(installed.contains(&format!("\njobs:\n  {}:\n", workflow.job)));
+            assert!(installed.contains("GITMOJI_VERSION: '0.15.1'"));
+            assert!(!top.join(workflow.legacy_path).exists());
+        }
+        assert_eq!(
+            std::fs::read_to_string(top.join(format!("{}.before-update", title.legacy_path)))
+                .unwrap(),
+            customized
+        );
+        assert!(
+            !top.join(format!("{}.before-update", check.legacy_path))
+                .exists()
+        );
+        changed.clear();
+        write_workflows(&top, &paths, false, &mut changed).unwrap();
+        assert!(changed.is_empty());
+        std::fs::remove_dir_all(top).unwrap();
+    }
+
+    #[test]
+    fn workflow_migration_respects_project_files_index_and_existing_backups() {
+        let top = scratch("workflow-collisions");
+        git(&top, &["init", "-q"]).unwrap();
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.1'").unwrap();
+        let title = &WORKFLOWS[0];
+        let check = &WORKFLOWS[1];
+        let customized = format!("{WORKFLOW_MARKER}\nname: custom\n");
+        write(&top.join(title.legacy_path), &customized).unwrap();
+        write(&top.join(check.legacy_path), &customized).unwrap();
+        write(&top.join(title.path), "name: project owned\n").unwrap();
+        git(&top, &["add", check.legacy_path]).unwrap();
+        let paths = SkillPaths::new(&top).unwrap();
+        let mut changed = Vec::new();
+        for requested in [false, true] {
+            write_workflows(&top, &paths, requested, &mut changed).unwrap();
+            assert!(changed.is_empty());
+            assert_eq!(
+                std::fs::read_to_string(top.join(title.path)).unwrap(),
+                "name: project owned\n"
+            );
+            assert!(!top.join(check.path).exists());
+        }
+        git(&top, &["rm", "--cached", check.legacy_path]).unwrap();
+        let backup = top.join(format!("{}.before-update", check.legacy_path));
+        write(&backup, "keep my backup").unwrap();
+        write_workflows(&top, &paths, false, &mut changed).unwrap();
+        assert_eq!(std::fs::read_to_string(backup).unwrap(), "keep my backup");
+        for workflow in WORKFLOWS {
+            assert_eq!(
+                std::fs::read_to_string(top.join(workflow.legacy_path)).unwrap(),
+                customized
+            );
+        }
+        assert!(changed.is_empty());
+
+        // A previous interrupted run left exactly the backup this update needs.
+        write(
+            &top.join(format!("{}.before-update", check.legacy_path)),
+            &customized,
+        )
+        .unwrap();
+        write_workflows(&top, &paths, false, &mut changed).unwrap();
+        assert_eq!(changed, [check.path]);
+        assert!(!top.join(check.legacy_path).exists());
+        assert!(!create_workflow_file(&top.join(title.path), "replacement").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(top.join(title.path)).unwrap(),
+            "name: project owned\n"
+        );
+        std::fs::remove_dir_all(top).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workflow_migration_leaves_symbolic_links_and_their_targets_alone() {
+        use std::os::unix::fs::symlink;
+        let top = scratch("workflow-symlinks");
+        git(&top, &["init", "-q"]).unwrap();
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.1'").unwrap();
+        let paths = SkillPaths::new(&top).unwrap();
+        let mut changed = Vec::new();
+        let title = &WORKFLOWS[0];
+        let target = top.join("target.txt");
+        let saved = format!("{WORKFLOW_MARKER}\nname: saved\n");
+        write(&target, &saved).unwrap();
+        write(&top.join(title.legacy_path), &saved).unwrap();
+        symlink(&target, top.join(title.path)).unwrap();
+        write_workflows(&top, &paths, false, &mut changed).unwrap();
+        assert!(top.join(title.legacy_path).exists());
+        assert!(top.join(title.path).is_symlink());
+        assert_eq!(std::fs::read_to_string(target).unwrap(), saved);
+        assert!(changed.is_empty());
+        std::fs::remove_dir_all(top).unwrap();
+    }
+
+    #[test]
     fn workflow_install_rejects_invalid_release_pins_and_respects_staged_files() {
         let top = scratch("workflow-conflicts");
         git(&top, &["init", "-q"]).unwrap();
-        let title = WORKFLOWS[0].0;
+        let title = WORKFLOWS[0].path;
         write(&top.join(title), "name: staged workflow\n").unwrap();
         git(&top, &["add", "--", title]).unwrap();
         let paths = SkillPaths::new(&top).unwrap();
@@ -1325,11 +1566,11 @@ mod tests {
             )
             .unwrap();
             assert!(write_workflows(&top, &paths, true, &mut changed).is_err());
-            assert!(!top.join(WORKFLOWS[1].0).exists());
+            assert!(!top.join(WORKFLOWS[1].path).exists());
         }
         write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.0'").unwrap();
         write_workflows(&top, &paths, true, &mut changed).unwrap();
-        assert_eq!(changed, [WORKFLOWS[1].0]);
+        assert_eq!(changed, [WORKFLOWS[1].path]);
         assert_eq!(
             std::fs::read_to_string(top.join(title)).unwrap(),
             "name: staged workflow\n"
