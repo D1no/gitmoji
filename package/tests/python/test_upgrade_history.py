@@ -130,6 +130,52 @@ class UpgradeHistory(unittest.TestCase):
                 self.assertEqual([r['subject_new'] for r in rows],
                                  ['Revert #7 [`🎨✨`] Show preview', 'Reapply #7 [`🎨✨`] Show preview'])
 
+    def test_rewritten_legacy_title_recovered_with_and_without_old_objects(self):
+        self.git('commit', '-q', '--amend', '-m', 'Merge #7 [`🎨✨`] Show preview (#7) (#7)')
+        rewritten = self.git('rev-parse', 'HEAD')
+        self.git('revert', '--no-edit', '-m', '1', rewritten)
+        for hosted_oid in (self.merge, '1' * 40):
+            with self.subTest(hosted_oid=hosted_oid):
+                self.pr['mergeCommit']['oid'] = hosted_oid
+                report = self.execute()
+                landing, undo = report['review_or_changed_commits']
+                self.assertEqual(landing['subject_new'], '[`🎨✨`] Show preview (#7)')
+                self.assertIn('unique caption', landing['evidence'])
+                self.assertEqual(undo['subject_new'], 'Revert #7 [`🎨✨`] Show preview')
+
+    def test_fallback_rejects_wrong_title_inventory_ambiguous_or_unmerged_pr(self):
+        for subject in ('Merge #7 [`🎨✨`] Other wording', 'Merge #7 [`🧩✨`] Show preview',
+                        'Merge #7 [WIP] Show preview', 'Show preview (#7)',
+                        'Merge #100 [`🎨✨`] Show preview'):
+            with self.subTest(subject=subject):
+                self.git('commit', '-q', '--amend', '-m', subject)
+                report = self.execute()
+                self.assertEqual(report['candidate_tip'], report['source_tip'])
+                self.assertIn('review', report['review_or_changed_commits'][0])
+        self.git('commit', '-q', '--amend', '-m', 'Merge #7 [`🎨✨`] Show preview')
+        self.pr['mergeCommit']['oid'] = self.member
+        self.assertIn('already in', self.execute()['review_or_changed_commits'][-1]['review'])
+        self.pr['mergeCommit']['oid'] = '0' * 40
+        first = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-qc', 'second')
+        self.git('commit', '-q', '--allow-empty', '-m', 'Another change')
+        self.git('switch', '-q', 'main')
+        self.git('merge', '--no-ff', 'second', '-qm', '[`🎨✨`] Show preview (#7)')
+        report = self.execute(base=first, update_pr_titles=True)
+        self.assertIn('multiple local merges', report['review_or_changed_commits'][0]['review'])
+
+    def test_rewritten_caption_refuses_shared_old_id_and_nonmatching_original_trees(self):
+        self.git('commit', '-q', '--amend', '-m', 'Merge #7 [`🎨✨`] Show preview')
+        self.prs.append({**self.pr, 'number': 42})
+        self.assertIn('multiple merged PRs', self.execute()['review_or_changed_commits'][0]['review'])
+        self.prs.pop()
+        Path('unrelated').write_text('different merge result')
+        self.git('add', 'unrelated')
+        self.git('commit', '-q', '--amend', '--no-edit')
+        row = self.execute()['review_or_changed_commits'][0]
+        self.assertIn('different trees', row['review'])
+        self.assertNotIn('subject_new', row)
+
     def test_one_parent_landing_subject_needs_review_and_undo_names_target_once(self):
         self.git('switch', '-q', 'topic')
         for existing, expected in (('Merge #7 [`🎨✨`] Show preview', '[`🎨✨`] Show preview'),

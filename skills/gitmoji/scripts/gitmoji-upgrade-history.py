@@ -55,6 +55,20 @@ REVERT_TARGET = re.compile(
 )
 
 
+# Only allow a vocabulary inventory (validated by the CLI below) to serve as
+# a subject-based link. A free-form "Merge #N" or a bare "(#N)" is too common.
+LEGACY_CAPTION = re.compile(rb'^Merge #([1-9][0-9]{0,9}) (\[`.+?\] .+)$')
+LANDED_CAPTION = re.compile(rb'^(\[`.+?\] .+) \(#([1-9][0-9]{0,9})\)$')
+
+
+def caption_number(subject):
+    legacy = LEGACY_CAPTION.fullmatch(subject)
+    if legacy:
+        return int(legacy[1])
+    landed = LANDED_CAPTION.fullmatch(subject)
+    return int(landed[2]) if landed else None
+
+
 def run(*args, data=None):
     result = subprocess.run(args, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode:
@@ -83,6 +97,17 @@ class PullRequests:
                 self.by_number[pr['number']] = pr
                 if pr['mergeCommit']:
                     self.by_oid[pr['mergeCommit']['oid']].append(pr)
+
+    def index_captions(self, tip):
+        # Include the whole source graph even when --base limits the planned edits.
+        self.tip = tip
+        self.caption_claims = defaultdict(set)
+        for row in git('log', '--no-show-signature', '--merges', '--format=%H%x00%s', tip).split(b'\n'):
+            if row:
+                oid, subject = row.split(b'\0', 1)
+                number = caption_number(subject)
+                if number in self.by_number:
+                    self.caption_claims[number].add(oid.decode('ascii'))
 
     def pages(self, query, *variables):
         owner, name = self.repo.split('/')
@@ -178,8 +203,11 @@ def revert_origin(oid, parent, message, prs):
         candidates = prs.by_oid.get(target, [])
         if len(candidates) > 1:
             raise ReviewNeeded('multiple merged PRs claim the undo target')
-        if len(parents) == 2 and candidates:
-            return candidates[0], depth, parents, None, 'merge'
+        if len(parents) == 2:
+            landing = verified_landing(target, parents, target_message, prs)
+            if landing:
+                pr, caption, _ = landing
+                return pr, depth, parents, caption['title'], 'merge'
         if len(parents) == 1 and UNDO.match(target_message) and REVERT_TARGET.search(target_message):
             if candidates:
                 raise ReviewNeeded('undo chain includes an ambiguous one-parent PR landing')
@@ -222,20 +250,79 @@ def landing_title(subject, pr, oid):
     return checked_title(subject, 'landing commit')
 
 
-def proposal(oid, parents, message, prs):
+def verified_landing(oid, parents, message, prs):
     old = message.split(b'\n', 1)[0]
     matches = prs.by_oid.get(oid, [])
     if len(matches) > 1:
-        return None, 'multiple merged PRs claim this commit', None
-    if len(parents) == 2 and matches:
+        raise ReviewNeeded('multiple merged PRs claim this commit')
+    number = caption_number(old)
+    if matches:
         pr = matches[0]
+        if number is not None and number != pr['number']:
+            raise ReviewNeeded('caption number conflicts with the exact merged PR')
+        # Preserve the historical wording of a landed title, including manual
+        # edits that differ from the current hosted title. Rebuild its inventory.
+        source = pr
+        untagged_landing = old.endswith(f' (#{pr["number"]})'.encode()) and not old.startswith(b'Merge ')
+        if number or untagged_landing:
+            try:
+                source = {**pr, 'title': old.decode('utf-8')}
+            except UnicodeError as error:
+                raise ReviewNeeded('cannot decode the landed title') from error
+        return pr, merge_caption(source, parents), 'exact merged PR commit'
+    if number is None:
+        return None
+    pr = prs.by_number.get(number)
+    if not pr or not pr['mergeCommit']:
+        raise ReviewNeeded('caption has no recorded merged PR in this repository')
+    if prs.caption_claims[number] != {oid}:
+        raise ReviewNeeded('multiple local merges carry this PR caption')
+    original = pr['mergeCommit']['oid']
+    if len(prs.by_oid[original]) != 1:
+        raise ReviewNeeded('multiple merged PRs claim the original landing')
+    # When the old objects are available, use them to rule out branch syncs,
+    # squashes and different changes masquerading as a rewritten PR merge.
+    if subprocess.run(['git', '--no-replace-objects', 'cat-file', '-e', original + '^{commit}'],
+                      capture_output=True).returncode == 0:
+        if subprocess.run(['git', '--no-replace-objects', 'merge-base', '--is-ancestor', original, prs.tip],
+                          capture_output=True).returncode == 0:
+            raise ReviewNeeded('GitHub’s actual merge is already in the source history')
+        _, old_parents, _ = read_commit(original)
+        if len(old_parents) != 2 or any(
+                git('rev-parse', left + '^{tree}') != git('rev-parse', right + '^{tree}')
+                for left, right in zip([oid, *parents], [original, *old_parents])):
+            raise ReviewNeeded('original merge and rewritten merge have different trees or parents')
+    caption = merge_caption(pr, parents)
+    if not caption['recognized']:
+        raise ReviewNeeded('caption has no corroborating commit inventory')
+    # Comparing to the renderer also validates the exact vocabulary, grouping
+    # and normalized human wording. Remove only repeated references to this PR.
+    local = old.removeprefix(f'Merge #{number} '.encode())
+    suffix = f' (#{number})'.encode()
+    while local.endswith(suffix):
+        local = local[:-len(suffix)]
+    if local != caption['title'].encode():
+        raise ReviewNeeded('caption does not match the merged PR title and incoming inventory')
+    return pr, caption, 'unique caption matches merged PR title and incoming inventory'
+
+
+def proposal(oid, parents, message, prs):
+    old = message.split(b'\n', 1)[0]
+    if len(parents) == 2:
+        landing = verified_landing(oid, parents, message, prs)
+        if not landing:
+            return None, 'merge without a unique two-parent PR landing', None
+        pr, result, evidence = landing
         number = pr['number']
-        caption = merge_caption(pr, parents)['subject'].encode()
+        caption = result['subject'].encode()
         # The PR record supplies names even if the branch refs have been deleted.
         owner = (pr['headRepositoryOwner'] or {}).get('login')
         source = (owner + ':' if owner else '') + pr['headRefName']
         route = f"Merged from {source} into {pr['baseRefName']} (PR #{number}).".encode()
-        return caption, 'exact merged PR commit', route
+        return caption, evidence, route
+    matches = prs.by_oid.get(oid, [])
+    if len(matches) > 1:
+        return None, 'multiple merged PRs claim this commit', None
     if matches:
         return None, 'one-parent or nonstandard PR landing requires review of the original operation', None
     if len(parents) == 1 and UNDO.match(old):
@@ -298,6 +385,7 @@ def make_candidate(args):
         ensure_branch_available(candidate)
     commits = git('rev-list', '--reverse', '--topo-order', *revisions).decode().splitlines()
     prs = PullRequests(args.repo, args.hostname)
+    prs.index_captions(tip)
     remapped = {}
     changes = []
     signed = []
