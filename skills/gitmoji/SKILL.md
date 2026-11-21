@@ -203,11 +203,12 @@ which of them would not pass today.
 
 ## Landing pull requests and upgrading history
 
-Use a merge commit to preserve the authored decisions. Run the installed
-`scripts/github-merge.py` with Python 3 to preview the PR caption and branch
-details. Review them before requesting a merge. Follow the [pull request
-guide](references/pull-requests.md) for GitHub, Enterprise Cloud, forks, nested
-merges, stacks, queues and optional squash.
+Enable the [PR title workflow](references/pull-requests.md#enable-automatic-pr-titles)
+and select **Pull request title and description** as the default merge message.
+Write the human title. Gitmoji maintains its emoji prefix as the commits change.
+Use **Create a merge commit** to keep the authored decisions and let GitHub append
+the integrating PR number. For a terminal preview or direct merge, use the installed
+`scripts/github-merge.py` as described in the [pull request guide](references/pull-requests.md).
 
 For an existing history, use the [upgrade guide](references/upgrade-history.md)
 and the installed `scripts/gitmoji-upgrade-history.py`. Inspect the dry run

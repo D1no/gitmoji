@@ -1,17 +1,64 @@
-# Land a pull request with its authored history
+# Show commit intentions on a pull request
 
-Choose **Create a merge commit** for Gitmoji repositories. Each reviewed decision then keeps its subject, ticket and commit on the target branch. A merge caption summarizes the PR in the file list. Open the PR or its authored commits to see which decision changed a particular file.
+A PR starts with the reviewer’s title. Gitmoji adds the areas and intentions of its incoming commits and updates them as the PR changes. With **Create a merge commit**, each authored decision stays in the target branch’s history.
 
-## Set up GitHub or GitHub Enterprise Cloud
+| Where | Example |
+| --- | --- |
+| Reviewer’s title | Give reviewers a working preview |
+| Open PR | <code>[`🧱🎨` / `🛂✨`] Give reviewers a working preview</code> |
+| Merge commit after landing PR 42 | <code>[`🧱🎨` / `🛂✨`] Give reviewers a working preview (#42)</code> |
 
-1. Under **Settings → General → Pull Requests**, enable **Allow merge commits**. To make this the repository’s only landing method, disable squash merging and rebase merging there. Teams that also want squash can keep it available.
-2. Check the rulesets and branch protection covering the target, including organization or enterprise rules. The permitted merge methods must include merge commits. **Require linear history** excludes two-parent merges. Where that rule is intentional, keep the caption with the PR and use the repository’s permitted method.
-3. Keep required reviews, status checks and protected-branch rules in effect. For a required merge queue, choose the merge-commit method in the queue settings if the repository allows it. A local commit hook runs on the machine creating the commit. GitHub's default message choices are static. Generate the tag groups before landing.
-4. Use a full Git clone, Python 3.9 or later, the current Gitmoji command and an authenticated GitHub CLI. For Enterprise Cloud on a dedicated domain such as `octocorp.ghe.com`, authenticate with `gh auth login --hostname octocorp.ghe.com` and pass `--hostname octocorp.ghe.com` to the helper. Read access suffices for inspection. Landing requires permission to merge the PR.
+## Enable automatic PR titles
 
-[Repository merge settings](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/configuring-commit-merging-for-pull-requests) · [Enterprise Cloud settings](https://docs.github.com/en/enterprise-cloud@latest/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/configuring-commit-merging-for-pull-requests) · [Merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
+1. Add the workflow to your default branch. On GitHub.com, use this caller in `.github/workflows/pr-title.yml`. A project that already runs a title formatter should replace it so a single workflow owns the prefix.
 
-## Preview and land
+   ```yaml
+   name: Pull request title
+   on:
+     pull_request_target:
+       types: [opened, reopened, synchronize, edited]
+   permissions:
+     contents: read
+     pull-requests: write
+   jobs:
+     caption:
+       uses: D1no/gitmoji/.github/workflows/pr-title.yml@v0.14.0
+   ```
+
+   On a GitHub Enterprise Cloud host with its own domain, or when your organization requires workflows to live in the consumer repository, copy the [complete workflow from v0.14.0](https://github.com/D1no/gitmoji/blob/v0.14.0/.github/workflows/pr-title.yml) to that same path instead. It uses the host of the PR and downloads Gitmoji from its public release. The runner needs access to both hosts.
+2. Under **Settings → General → Pull Requests**, enable **Allow merge commits** and select **Pull request title and description** as the default message. Administrators can also apply these two settings with the GitHub CLI.
+
+   ```sh
+   gh api --method PATCH repos/OWNER/REPO \
+     -F allow_merge_commit=true -f merge_commit_title=PR_TITLE -f merge_commit_message=PR_BODY
+   ```
+
+   Use `gh api --hostname HOST` on Enterprise Cloud. Required reviews, checks, queue settings and branch rules still apply. A branch requiring linear history needs its permitted landing method. [GitHub merge settings](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/configuring-commit-merging-for-pull-requests)
+3. Open a PR or edit an existing PR’s title. After the title job finishes, push a commit with another intention and check that the prefix changes. Edit the human wording directly in GitHub. When ready, use **Create a merge commit** with its suggested title and body. GitHub puts the PR number at the end and carries the description into the merge body.
+
+The workflow uses the current base, head and human title when the PR opens, reopens, receives a push, or is edited (including a base change). It fetches commit objects from the base repository and runs the formatter from the trusted Gitmoji release. It skips an already-correct title. A human edit made at the same instant as the final title update can race with it. GitHub’s title API has no expected-title parameter. A subsequent edit or push runs the sync again. [GitHub PR API](https://docs.github.com/en/rest/pulls/pulls#update-a-pull-request)
+
+## Read or preview a caption
+
+```text
+[`🎨✨`] Give reviewers a working preview
+[`🧱🎨` / `🛂✨`] Give reviewers a working preview
+[`🧱🎨`… / `🔧✨📝🛂♻️`…] Roll out previews across environments
+```
+
+A single distinct heading stays together. With mixed headings, areas appear on the left and activities, modifiers and markers on the right, in order of first appearance. Repeated symbols use one slot. Three areas fit in full. At four or more, the first two and an ellipsis appear. The complete inventory uses up to nine visible symbols, including ellipses. If no incoming commit carries a recognized heading, the human title stands alone. Labels such as `[WIP]` remain part of the human title. A trailing reference to this same PR is removed before formatting so the merge gets one number. References to other PRs stay in place.
+
+From a full local clone, supply the target revision first and the source revision second.
+
+```sh
+gitmoji merge-caption --pr 42 --title 'Give reviewers a working preview' origin/trunk HEAD
+```
+
+The text output is the live PR title. With `--json`, `title` is that same string, `subject` is the proposed merge subject with the trailing PR number, and `recognized` and `total` report coverage. For an existing merge `M`, use `M^1 M^2`. A nested merge contributes its newly reachable authored commits once.
+
+A PR that rolls back earlier work carries its own integrating number at the end, for example `(#42)`. A verified standalone undo inside it can name the earlier PR with `Revert #17 …`. See the [history upgrade guide](upgrade-history.md).
+
+## Preview or merge from the terminal
 
 Run this from the target repository. The example uses the skill path installed by `gitmoji init`. For another skill installation, use the same script under that skill’s directory.
 
@@ -36,30 +83,13 @@ python3 .claude/skills/gitmoji/scripts/github-merge.py --repo OWNER/REPO --pr 42
 
 The helper verifies the host, repository, PR, source and destination revisions, method, proposed message and coverage. If an input changes, inspect a fresh preview. GitHub applies the rules configured for the caller and atomically checks the expected **head**. Its merge endpoint has no corresponding expected-base parameter. The helper rereads the destination immediately before sending the request, so a change after that read can still affect the merge. [GitHub merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request)
 
-For a human merge, copy the first line of standard output to GitHub’s merge title and the remaining text to the message. A merge into a release or integration branch names that destination in the body. A branch sync without a PR keeps its source, destination and conflict notes.
+The terminal helper requires Python 3.9 or later, a full Git clone, a matching Gitmoji CLI and an authenticated GitHub CLI. On a dedicated Enterprise Cloud domain, pass `--hostname HOST`. Read access suffices for a preview. Landing requires permission to merge.
 
-## Read the caption
-
-```text
-Merge #42 [`🧱🎨` / `🛂✨`] Give reviewers a working preview
-Merge #43 [`🧱🎨`… / `🔧✨📝🛂♻️`…] Roll out previews across environments
-```
-
-The number opens the PR. Areas appear on the left and activities, modifiers and markers on the right. A repeated pair appears once, and a single distinct heading stays together. Distinct symbols retain their order of first appearance. Three areas fit in full. At four or more, show the first two and `…`. Nine visible symbols fit between the brackets, counting each ellipsis once. An ellipsis that follows a backtick belongs to the group that overflowed. The full PR title follows the brackets. If the commits contain no recognized intentions the subject contains the operation, number and title alone.
-
-For a local preview without a host connection, supply the target and source revisions in that order:
-
-```sh
-gitmoji merge-caption --pr 42 --title 'Give reviewers a working preview' origin/trunk HEAD
-```
-
-For an existing two-parent merge `M`, supply `M^1` and `M^2` to reconstruct the range that arrived at that point in history. Nested PRs use authored commits newly reachable from the destination. Earlier merge captions do not contribute a second set of symbols.
-
-A PR that undoes a change still lands as `Merge #42 …`. Its number opens the integrating PR, including any additional work it contains. Inside that PR, a verified standalone undo can point to its target with `Revert #17 …`. The [history upgrade guide](upgrade-history.md) describes how undo evidence is checked.
+The explicit merge keeps the PR number at the end of the subject and stores the branch provenance in the body. A merge into a release or integration branch names that destination in the body. A branch sync without a PR keeps its source, destination and conflict notes.
 
 ## Stacks, queues and squash
 
-Each native stacked PR summarizes its own reviewed layer against its immediate base. The stack lands bottom-up. When an upper layer is retargeted, preview it against its current base. GitHub’s PR page carries the stack map. Keep the layer caption in the PR description when the host controls the commit text. GitHub requires its asynchronous stack merge path, and custom commit title and body parameters are supported for direct merges only. Land the stack or queued PR through its usual protected path. [Stacked PRs](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs) · [Merge API](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request-asynchronously)
+Each native stacked PR summarizes its own reviewed layer against its immediate base. The stack lands bottom-up. When an upper layer is retargeted, the title workflow refreshes it against its new base. GitHub’s PR page carries the stack map. Review each layer’s title in GitHub. The queue or stack controls its final commit message. GitHub requires its asynchronous stack merge path, and custom commit title and body parameters are supported for direct merges only. Land the stack or queued PR through its usual protected path. [Stacked PRs](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs) · [Merge API](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request-asynchronously)
 
 For a team that chooses **Squash and merge**, generate the caption while the reviewed head and base are available. Paste it into the squash dialog and keep the original squash details in the body. The target branch then has one commit for the whole PR. Its caption can point back to the review, but cannot restore the per-issue sequence of authored commits. Rebase merging produces no separate merge row. [GitHub merge methods](https://docs.github.com/en/pull-requests/reference/pull-request-merges)
 

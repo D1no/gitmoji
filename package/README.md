@@ -40,9 +40,9 @@ Choose the actual base branch for either command. History inspection is read-onl
 ## Merge captions
 
 `gitmoji merge-caption --pr 42 --title 'Give reviewers a preview' BASE HEAD`
-prints the merge subject from the authored commits arriving in `BASE..HEAD`.
-Add `--json` for the subject, the count with recognized headings and the total
-number of incoming non-merge commits. Local replacement refs and grafts do
+prints the live PR title from the authored commits arriving in `BASE..HEAD`.
+Add `--json` for the PR `title`, landed `subject` ending in `(#42)`, the count
+with recognized headings and the total number of incoming non-merge commits. Local replacement refs and grafts do
 not change the inventory.
 Use the [GitHub workflow](../skills/gitmoji/references/pull-requests.md) for
 the subject and original branch information together. For an existing

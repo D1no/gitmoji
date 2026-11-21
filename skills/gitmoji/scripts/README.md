@@ -1,6 +1,8 @@
 # Skill scripts
 
-Use the [PR guide](../references/pull-requests.md) for `github-merge.py` and the
+The PR title workflow runs `github-pr-title.py` to keep the hosted title in sync.
+Use the [PR guide](../references/pull-requests.md) to enable it or to run
+`github-merge.py` for a direct merge. See the
 [history upgrade guide](../references/upgrade-history.md) for `gitmoji-upgrade-history.py`.
 
 ## Signature scripts, one per harness
