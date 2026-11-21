@@ -40,6 +40,10 @@ const SKILL: &[(&str, &str)] = &[
         include_str!("../../skills/gitmoji/scripts/gitmoji-upgrade-history.py"),
     ),
     (
+        "scripts/github-pr-title.py",
+        include_str!("../../skills/gitmoji/scripts/github-pr-title.py"),
+    ),
+    (
         "scripts/github-merge.py",
         include_str!("../../skills/gitmoji/scripts/github-merge.py"),
     ),
