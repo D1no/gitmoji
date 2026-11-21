@@ -1,0 +1,3 @@
+# Gitmoji Triangle
+
+@AGENTS.md

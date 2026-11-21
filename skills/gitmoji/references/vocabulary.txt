@@ -1,0 +1,161 @@
+Gitmoji Triangle 0.13.0
+
+  <area><behaviour or intent>[modifier] <ticket> (<scope>): <summary>
+  🧩👔 #412 (server): allow an appeal within 30 days of refusal
+  🎨💄 — (tokens): take the new hues from Figma   (a job made it: no ticket)
+
+Before you commit, answer four questions:
+  1. Which area is the change part of, or about?            see the list below
+  2. What is different now (a noun), or what did you do (a verb)?
+                                                            gitmoji guide <area emoji>
+  3. Is the work not settled: a trial, a stopgap, breaking?  gitmoji guide modifiers
+  4. Which ticket is it for? A job has none and writes an em dash.
+  Then write it: summary, body, who wrote it.               gitmoji guide message
+
+The scope is the package that owns the decision, one per commit.
+A commit carries one pair. If two seem to fit, ask whether a reviewer could accept
+one part and defer the rest. If yes, split there. If neither works alone, it is one
+commit, tagged by its point. Parts forced by the main change ride along: its types,
+its test, a lockfile.
+
+Areas, system: Does it run in production?
+  🎨 Experience           The user's side of the coin: what people see, touch, read and feel, whether it is a feature or a quality such as speed or polish.
+  🧩 Capability           The other side of the coin: what the system does to make that experience possible
+  🛰️ Integration          Connections to systems outside this repo, internal or external.
+  🗃️ Data                 The running system's own schemas, migrations and stored data.
+  🧠 AI                   Behaviour that was fitted, not written out: everything a model or agent does inside the system
+  🧱 Infrastructure       Cloud resources, containers and environments.
+  Choose: Experience is what people get; Capability is what makes it possible. Choose 🧠 when a model's output is what changes, 🗃️ when stored or derived data is, 🧱 for what it runs on. 🛰️ is for services, apps and platforms we reach over a wire; the host operating system, a device or the browser is 🧩 or 🎨. Written-out code that only serves a model or an agent, such as an exporter, is 🧩. A demo or lab app shown to people outside the team is product, so 🎨. The area is the side of the coin, not the device or the folder.
+
+Areas, workbench: Or does it help us build the system?
+  🧑‍💻 Builder experience   What the people who build the product work with, engineers, data scientists and product people alike: local setup, scripts, internal pages and explorers.
+  👷 CI                   Pipelines, builds and checks.
+  🤖 Agent toolkit        What only coding agents work with: their instructions on how to work, memory, skills and their toolbelt.
+  Choose: Only for what the builders themselves use: 🧑‍💻 their setup and tools, 👷 the pipeline's own machinery, 🤖 what only coding agents work with. A test, a document or a playground takes the area of the thing it is about.
+
+More: gitmoji guide groups | gitmoji guide message | gitmoji guide rules | gitmoji guide <emoji> | gitmoji guide all
+
+1. Pair first. The emojis are the first characters of the line, with no space between them and nothing around them. First the area, then a behaviour or an intent. A lone second emoji is allowed when the area adds nothing.
+2. Merge commits. An authored commit names its intention. A merge integrates existing commits and can keep its own title. History recognizes merges by their parents and still checks the authored commits they bring in. An optional PR caption summarizes their areas and activities. A verified Revert or Reapply caption names the target PR.
+3. One pair, one scope. A commit carries one pair. When two seem to fit, the test is: could a reviewer accept this part and send the rest back? The same test says when to stop: if one part is no use without the other, they are one commit. Parts forced by the main change ride along: its types, its ☑️ test, a lockfile. The scope names the package that owns the decision. A change that cannot be accepted in parts stays one commit even when it touches a second package, such as one shape mirrored in two languages.
+4. Behaviour or intent. A behaviour is a noun: the system now has a different one. An intent is a verb: what you did. If the commit changes what is promised, name the behaviour. Otherwise say what you did.
+5. A ticket, or a dash. Every commit by a person or an agent names its ticket. A commit made by a job has none and carries an em dash in its place.
+6. A third emoji is rare. Only for work that is not settled: 🧪 exploration, 🚧 provisional, 💥 breaking. It needs a ticket, and 🏁 or ⚰️ closes it.
+7. Write the summary as behaviour. Say what the system does now, in the words of the domain: reject a renewal without a licence number.
+8. Say why, in the commit and in the code. Every commit by a person or an agent has a description under its first line that says why the change was made. And code carries comments where a reader could not guess the reason: why it is the way it is, what must not be changed, where a value comes from. A comment costs an agent almost nothing and saves the next reader, a person, a junior or an agent without your context, from guessing.
+9. The author is a person. An agent never names itself as author or co-author of a commit. It signs the end of the body with what went into the commit: the model and its effort, the harness and its session, and, where they apply, sub-agents, other agents and research. Every value comes from the harness's record, not from memory.
+
+domain logic: What does the business want?
+  👔 Business rule        An answer the domain gives: yes, no or how much
+  ⛓️ Process              A sequence the domain wants: what happens next, and when
+  Choose: A rule is an answer: yes, no, how much. A process is a sequence: what happens next, and when. If time passes or something waits, it is a process.
+
+controls: Who can change how it behaves without changing the code? Product, policy, the user, engineers.
+  🎚️ Switch               A feature flag
+  🛂 Permissions          Who may do what: roles, policies and entitlements for people, built on switches, and the identities our own services run as.
+  ⚙️ Setting              Part of the product's design: something each user chooses for themselves, such as the start screen or dark mode
+  🔧 Configuration        What engineers set, per environment or per case: how many pods, which endpoint, a model's temperature for one kind of question.
+  Choose: Ask who turns the knob. Product, for everyone or a subset: 🎚️. A policy about who may: 🛂. Each user for themselves, or a customer's admin for their organisation: ⚙️. Our own engineers or operators, per environment, per case or while it runs, such as a sampling rate or a pause: 🔧. Sharing and access between legitimate users is 🛂; a defence against someone hostile is 🔒️.
+
+protection: What if something is wrong?
+  🛡️ Validation guard     Stops what should not come in, input or data, before acting on it
+  🥅 Error handling       What happens after a step has failed, and how the failure is reported back: how it recovers, the stable error code it carries, and the meaningful description people are shown
+  🔒️ Security             Definite controls against an attacker: encryption, authentication, patched vulnerabilities
+  Choose: A guard stops bad input or data before the step is tried. Error handling is everything from the moment a step has failed: what happens next, the error code the failure is reported under, and what people are told. It is not only about code that breaks: a failure that is reported back badly is an error-handling gap. The catalogue of error codes belongs here, with a meaning for each code; add a code as a commit of its own, and reuse an existing one where it fits. With 🧩 it is the code for our own tools, with 🎨 the description for the person using the product. Sending the codes to a tool such as Sentry or PostHog is 🔊; translating the description is 🌐. Security keeps out someone hostile and keeps private content from being stored or sent: encryption, authentication, redaction, a patched hole. A guard is about correct input, not about privacy. Who among legitimate users may do what is 🛂, not 🔒️.
+
+connections: How do the pieces meet?
+  🏷️ Contract             An agreed shape: types, interfaces and API schemas between modules, or the schema of something stored.
+  🔌 Wiring               Connects existing pieces: a resolver, a route, a registration, navigation.
+  📤 Sends out            Something leaves our system: an email, a notification, a webhook call, an event on a queue, an exported file.
+  Choose: Contract is the agreed shape where two pieces meet; it takes the area of what it describes, so a stored table's shape is 🗃️🏷️ and a shape passed between modules is 🧩🏷️. Wiring connects pieces that exist. Sends out is something leaving our system. Mounting a finished piece where users first reach it is ✨, not 🔌.
+
+what it keeps: What does it hold on to?
+  💾 State                What it remembers, in memory or stored for good: fields, tables, caches, client stores.
+  🔐 Secrets              Repo and deployment secrets: added, rotated, removed
+  Choose: State is anything it remembers, in memory or stored for good: fields, tables, caches, client stores. A new table or field is 💾. Secrets are credentials of the repository and its deployments.
+
+from data: What does it take from data, and what does it make of it?
+  🎭 Synthetic data       Made-up or anonymised records that are safe to keep in the repository: fixtures, seeds, evaluation sets, samples derived from production
+  🧮 Transformation       Data made from other data: a dbt model, a cleaning or normalising step, a feature computed for a model.
+  🎯 Objective            What counts as a good result: a loss function, a metric, the scorer of an evaluation.
+  📊 Report               What the numbers show people: statistics, dashboards, the recorded scores of a run, a notebook rendered to PDF
+  Choose: In order: the synthetic examples, what is made from data, what counts as a good result, what the numbers show people. 📊 is for numbers: scores, statistics, charts; a finding or a verification written in prose is 📝. Real data never enters the repository.
+
+looks: What do people see?
+  💄 Style                Colours, typography, theme, design tokens.
+  📐 Layout               The arrangement itself changes: spacing, positioning, sizing, how things reflow
+  💫 Delight              A small moment that makes the product a pleasure to use: an animation, a transition, a touch of feedback people notice
+  🍱 Assets               Logos, images, icons, video, fonts.
+  Choose: What people see. Style is colour and type, layout is how things are arranged, delight is a moment people enjoy, usually through movement, assets are files such as images and models. Movement that nobody would miss is not 💫. When the arrangement itself must change, on any screen or across a fold, it is 📐; when the same arrangement is only made to work on a named device or system, it is 📱.
+
+feel: How does it respond to people?
+  🚸 Interaction          Touch, gestures, forms and the steps of a flow.
+  📱 Fit                  Existing behaviour is made to work on a named device, screen class, browser or operating system
+  Choose: How it responds. Interaction is the steps of a flow. Fit is making existing behaviour work on a named device, screen class, browser or operating system, with the arrangement and the steps unchanged; its area is 🎨 or 🧩, whichever the change is part of. When the arrangement itself must change it is 📐. If one change needs more than one of these, what a reviewer could defer decides the commits. A component people operate that is built but not yet reachable is 🚸; the commit where users first reach it is ✨.
+
+words: What does it say?
+  💬 Text                 Wording and literals.
+  🌐 Language             Making the product speak more than one language: looking messages up by key or code, the catalogue files translators work in, formats for dates and numbers, and the translations themselves.
+  📝 Documentation        Explains something to its readers: user guides, API docs, runbooks, contributor guides
+  Choose: Text is the wording itself in the language we write in; rewording a message is 💬. Language is everything that lets it be said in another language, and each translation; making a message translatable or translating it is 🌐. The error codes that messages are looked up by are 🥅. Documentation explains or records something for a reader and takes the area of what it is about. Numbers and charts are 📊.
+
+quality: How well does it run, and how do we know?
+  ☑️ Test                 A check on one piece of our own work that passes or fails before it ships: unit, contract, snapshot
+  ✅ Journey              A user's story played through on the real thing: someone who has state, creates state and extends it, run in a simulator or a production-like environment
+  🕹️ Playground           A place to try one part of the system on its own, without building the whole product: a component library, a notebook page, a simulator, a device rig.
+  ⚡️ Speed                Faster or lighter.
+  🔊 Telemetry            Signals the system emits: logs, metrics, traces, healthchecks.
+  Choose: ☑️ is any check on one piece that passes or fails. ✅ is only a user's story played through on the real product, such as a run on real devices; it is told from the user's side, so its area is usually 🎨, and it is its own commit. Writing down what such a run found is 📝. 🕹️ is a place to try a part by hand. A test or a story written together with the thing it covers rides along in that commit; it gets its own commit when it is the point. A check that refuses data while the system runs is 🛡️; a scorer is 🎯.
+
+add: Did something appear?
+  🆕 New                  A new unit with a name and a job of its own, such as a service, a collector or a package, when no behaviour names it.
+  ✨ Feature              Users can now do something they could not do before.
+  🏗️ Scaffold             Groundwork with no behaviour of its own: project setup, base components, helpers, empty views and routes.
+  Choose: Use these when no behaviour names the change. New is a self-standing unit with a name and a job of its own, such as a service, a collector or a package. Feature is the one commit where users first gain something, including the commit that mounts a finished piece where they can reach it; later refinements of the same flow are 🚸. A ✨ is followed on the same ticket by a ✅, once the product can be run that way: a user getting through it on the real thing. Until then the ticket says the journey is missing. Scaffold is groundwork with no behaviour.
+
+repair: Was something wrong, or in the way?
+  🐛 Fix                  It did the wrong thing; now it does the right thing.
+  🩹 Accommodation        Adapts our code to a limit in a dependency or tool
+  👽️ Outside change       It broke or had to change because something outside this repo moved.
+  ⏪️ Reverted             Undoes earlier work by hand, such as a migration rollback or a downgrade
+  Choose: Ask where the cause lives. In our own code: 🐛. The outside moved: 👽️. A limit of a dependency or tool that we adapt to: 🩹, with a Limitation: line. Undoing our own earlier work by hand, such as a rollback: ⏪️ (a plain git revert keeps the line git writes). Use these only when the commit does not change what is promised; if it does, name the behaviour.
+
+reshape: Did the structure change?
+  ♻️ Refactor             Restructuring inside a unit: moves, renames, internal architecture
+  ✂️ Extracted            Split out into a self-standing unit with its own entry point.
+  🪢 Folded in            Merged into something that already exists: a duplicate into the original when it is the same thing and not merely similar, or an extracted unit back into its consumers.
+  Choose: Refactor stays inside one unit. Extracted makes a self-standing unit. Folded in merges into something that already exists.
+
+remove: Did something go away?
+  🧹 Hygiene              Dead code, redundant tests, formatting
+  🔥 Remove               Takes out something that was in use.
+  Choose: Hygiene removes what nothing used. Remove takes out something that was in use.
+
+take in: Did it come from outside the code we write?
+  ➕ Dependency added     A new dependency enters.
+  ⬆️ Dependency upgraded  Upgraded or pinned.
+  ➖ Dependency removed   A dependency leaves.
+  📦️ Regenerated          Generated files rebuilt from sources in this repo: code graphs, compiled output, generated types.
+  📥 Imported             Brought in from a run or system outside the repo
+  Choose: ➕ ⬆️ ➖ are dependencies coming, changing and going. 📦️ is content rebuilt by a tool from our own sources. 📥 is content brought in from outside, with a Source: line. Prefer a behaviour when one names what the content is.
+
+close: Does it close an open end?
+  🏁 Finished             Closes what was left open and keeps the result: a trial adopted and its switch removed, a provisional version replaced, a migration done
+  ⚰️ Buried               Closes what was left open and removes the result
+  🚀 Rolled out           A rollout step: a switch or a trial opened to more users, or a version promoted to an environment.
+  Choose: Finished keeps the result of something left open. Buried removes it. Rolled out opens a switch or a version to more people. A closer says what decided it.
+
+stand alone: Two rare commits carry one emoji and no issue.
+  🔖 Release              Made by the release job
+  🔺 Convention revised   The repository adopts a version of this vocabulary, or moves to a new one: which meanings change for it
+  Choose: One emoji on its own: no other emoji, no ticket, no scope.
+
+not settled: Is it a trial, a stopgap, or something others must adapt to? Each needs a labelled issue. 🏁 or ⚰️ closes it.
+  🧪 Exploration          Work done to learn or to try something out: a study in a notebook, a comparison of candidates, an alternative approach in the product
+  🚧 Provisional          A temporary version, for a demo or to unblock other work
+  💥 Breaking             Consumers must adapt.
+  Choose: A third emoji, and rare. 🧪 is work merged as a trial, to learn or to try something; it ends in 🏁 or ⚰️, and nothing settled may depend on it. Building the direction a ticket has chosen is not a trial, even when the ticket lists open questions. 🚧 is a stopgap. 💥 means consumers must adapt.
+
+Retired: 🚑️ is now 🐛. Hotfix was folded into Fix. Urgency goes on the ticket as a label.
+Retired: ♿️ is now 🚸, 💄 or 💬. Accessibility is no longer an entry. Tag the commit by what changed: the steps of a flow, the style, the wording.
+Retired: 🔬 is now 🧪, 📝 or 📊. Research is no longer an entry. For a study or trial in progress, name what it changed and add 🧪 as a third emoji. For a finished finding or a verification record, use 📝 for prose and 📊 for numbers.

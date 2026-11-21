@@ -1,0 +1,13 @@
+{
+  "name": "gitmoji",
+  "owner": { "name": "user" },
+  "plugins": [
+    {
+      "name": "gitmoji",
+      "description": "Write commits in the Gitmoji Triangle convention: plan one decision per commit, tag it, say why.",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/gitmoji"]
+    }
+  ]
+}
