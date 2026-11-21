@@ -2,6 +2,11 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.15.1 (21 November 2026)
+
+- Managed workflows and their jobs now use `gitmoji-commits` and `gitmoji-pr-title`. Update the project pin, install this release and run `gitmoji init` to migrate enrolled 0.15.0 workflows. Project-owned files keep their names. When the new checks appear on GitHub, select the Gitmoji check you need and retain any existing requirement for your own `check` job. [Setup and required checks](skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles)
+- The historical title preview reports `to_change`, `already_correct` and `unmatched`. Rewritten merges can also match when both ordered parent changes and corresponding author records agree despite unrelated changes to the surrounding snapshots. Review entries identify the evidence that differs. [History guide](skills/gitmoji/references/upgrade-history.md#update-titles-of-already-merged-prs)
+
 ## 0.15.0 (21 November 2026)
 
 - Require signatures from recognized coding-agent sessions with `[rules] signature = "agents"`. Fresh installations enable this rule. Existing projects can opt in without changing the policy for human commits or old history.
