@@ -116,7 +116,8 @@ the forced parts together and say so in the body.
   it. Only a marker (`🔖`, `🔺`), a commit made by a job and a message git wrote need none. Under
   the first line, an empty line, then why the change was made: the reason, why this way
   and not the obvious one, or the value you chose. One or two lines are usually enough;
-  six are the most. Do not retell the diff, list files or describe your process.
+  six are the most. Keep ticket references inside the sentence (for example, “See #42 for the decision”).
+  Git can strip a line starting with `#42` when someone edits the commit. Do not retell the diff, list files or describe your process.
 - **Emojis, not shortcodes.** Only the characters are committed.
 
 ## Who wrote it

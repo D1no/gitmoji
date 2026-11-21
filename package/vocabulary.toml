@@ -54,7 +54,7 @@ text = "The whole first line, with emojis, ticket and scope, fits in 140 charact
 
 [[writing]]
 title = "The description"
-text = "Under the first line, an empty line, then why this change was made: the reason, why this way and not the obvious one, or the value you chose. One or two lines are usually enough, and six are the most. The check refuses a commit by a person or an agent that has none. Do not retell the diff, list files or describe your process. A commit made by a job and a marker need none."
+text = "Under the first line, an empty line, then why this change was made: the reason, why this way and not the obvious one, or the value you chose. Start the line with a word, as in 'See #42 for the decision.' Git can strip a line starting with #42 when someone edits the commit. One or two lines are usually enough, and six are the most. The check refuses a commit by a person or an agent that has none. Do not retell the diff, list files or describe your process. A commit made by a job and a marker need none."
 
 [[writing]]
 title = "Comments in the code"
