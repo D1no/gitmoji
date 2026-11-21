@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview retrospective GitHub PR captions and build a separate candidate branch."""
+"""Preview retrospective GitHub PR captions, build a candidate branch or update reviewed PR titles."""
 
 import argparse
 from collections import defaultdict
@@ -386,6 +386,7 @@ def make_candidate(args):
     commits = git('rev-list', '--reverse', '--topo-order', *revisions).decode().splitlines()
     prs = PullRequests(args.repo, args.hostname)
     prs.index_captions(tip)
+    title_updates = []
     remapped = {}
     changes = []
     signed = []
@@ -397,6 +398,14 @@ def make_candidate(args):
             new, reason, route = proposal(oid, parents, message, prs)
         except ReviewNeeded as error:
             new, reason, route = None, str(error), None
+        if new is not None and len(parents) == 2 and (args.update_pr_titles or args.apply_pr_titles):
+            # Every verified landing ends in exactly one same-PR suffix.
+            title, number = new.decode().rsplit(' (#', 1)
+            pr = prs.by_number[int(number[:-1])]
+            if title != pr['title']:
+                title_updates.append({'number': pr['number'], 'merge_commit': pr['mergeCommit']['oid'],
+                                      'source_commit': oid, 'before': pr['title'], 'after': title,
+                                      'evidence': reason})
         if new is not None and new != subject:
             # Keep the original subject and complete body, including conflict notes and trailers.
             provenance = b'Source commit: ' + oid.encode() + b'\n'
@@ -450,10 +459,69 @@ def make_candidate(args):
         new_tip = remapped[tip]
         ensure_branch_available(candidate)
         git('update-ref', '--no-deref', candidate, new_tip, '0' * len(tip))
-    return {'repository': args.hostname + '/' + args.repo, 'source_tip': tip,
+    result = {'repository': args.hostname + '/' + args.repo, 'source_tip': tip,
             'candidate_tip': remapped.get(tip, tip), 'created_branch': args.apply,
             'review_or_changed_commits': changes, 'invalidated_signatures': signed,
             'blocked_mergetags_or_encodings': blocked}
+    if args.update_pr_titles or args.apply_pr_titles:
+        result['pr_title_updates'] = title_updates
+        result['base'] = base if args.base else None
+    if args.apply_pr_titles:
+        reviewed = json.loads(Path(args.apply_pr_titles).read_text(encoding='utf-8'))
+        result['updated_pr_titles'] = apply_pr_titles(prs, reviewed, result)
+    return result
+
+
+def apply_pr_titles(prs, reviewed, fresh):
+    for key in ('repository', 'source_tip', 'base', 'candidate_tip'):
+        if key not in reviewed or reviewed[key] != fresh[key]:
+            raise ValueError(f'reviewed {key} changed; generate a fresh PR title preview')
+    plan = reviewed.get('pr_title_updates')
+    if not isinstance(plan, list):
+        raise ValueError('use a reviewed --update-pr-titles JSON preview')
+    expected = {row['number']: row for row in fresh['pr_title_updates']}
+    numbers = set()
+    pending = []
+    for row in plan:
+        number = row['number']
+        if type(number) is not int or number in numbers or number not in prs.by_number:
+            raise ValueError('invalid or duplicate merged PR in title plan')
+        numbers.add(number)
+        pr = prs.by_number[number]
+        if not pr['mergeCommit'] or pr['mergeCommit']['oid'] != row['merge_commit']:
+            raise ValueError(f'PR #{number} landing changed; generate a new preview')
+        if pr['title'] == row['after'] and number not in expected:
+            continue  # Already applied; a partial run can be retried.
+        if row != expected.pop(number, None):
+            raise ValueError(f'PR #{number} title plan changed; generate a new preview')
+        pending.append(row)
+    if expected:
+        raise ValueError('additional PR title changes found; generate a new preview')
+    updated = []
+    for row in pending:
+        number = row['number']
+        path = f'repos/{prs.repo}/pulls/{number}'
+        api = ('gh', 'api', '--hostname', prs.host)
+        try:
+            live = json.loads(run(*api, path))
+            if (live['number'] != number or live['state'] != 'closed' or not live['merged_at']
+                    or live['base']['repo']['full_name'].casefold() != prs.repo.casefold()
+                    or live['merge_commit_sha'] != row['merge_commit']):
+                raise ValueError('merged PR identity changed')
+            if live['title'] == row['after']:
+                continue
+            if live['title'] != row['before']:
+                raise ValueError('title changed since preview')
+            # REST does not accept an expected title. Re-read immediately before
+            # PATCH, send only the title, and verify the server's response.
+            response = json.loads(run(*api, '--method', 'PATCH', path, '-f', 'title=' + row['after']))
+            if response['number'] != number or response['title'] != row['after']:
+                raise ValueError('server returned a different title')
+        except (ValueError, KeyError, TypeError, OSError) as error:
+            raise ValueError(f'PR #{number}: {error}. Inspect the PR and rerun the preview; '
+                             f'earlier verified updates: {updated}') from error
+        updated.append(number)
+    return updated
 
 
 def main():
@@ -466,10 +534,17 @@ def main():
     parser.add_argument('--expect-candidate', metavar='OID',
                         help='apply only if the candidate tip matches the reviewed dry run')
     parser.add_argument('--allow-unsigned', action='store_true', help='allow signatures to be removed from rewritten commits')
+    parser.add_argument('--update-pr-titles', action='store_true',
+                        help='include proposed merged PR title updates in the read-only JSON preview')
+    parser.add_argument('--apply-pr-titles', metavar='REVIEWED_JSON',
+                        help='apply hosted title updates from a reviewed --update-pr-titles preview')
     args = parser.parse_args()
+    if args.apply and args.apply_pr_titles:
+        parser.error('apply the candidate branch and hosted title changes separately')
     if args.expect_candidate and not args.apply:
         parser.error('--expect-candidate requires --apply')
-    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', args.repo):
+    if (not re.fullmatch(r'[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+', args.repo)
+            or args.repo.split('/')[1] in {'.', '..'}):
         parser.error('--repo requires OWNER/REPO')
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:

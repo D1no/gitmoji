@@ -46,10 +46,28 @@ class UpgradeHistory(unittest.TestCase):
                    'headRepositoryOwner': {'login': 'fork'}, 'headRefName': 'topic', 'baseRefName': 'main'}
         self.prs = [self.pr]
         self.members = {7: [self.member]}
+        self.patches = []
+        self.live_overrides = {}
         command = upgrade.run
 
         def fake_run(*args, data=None):
             if args[0] == 'gh':
+                if 'graphql' not in args:
+                    self.assertEqual(args[args.index('--hostname') + 1], 'git.example.com')
+                    path = next(arg for arg in args if arg.startswith('repos/'))
+                    self.assertRegex(path, r'^repos/sample/repo/pulls/[0-9]+$')
+                    number = int(path.rsplit('/', 1)[1])
+                    pr = next(pr for pr in self.prs if pr['number'] == number)
+                    record = {'number': number, 'title': pr['title'], 'state': 'closed',
+                              'merged_at': '2024-10-01', 'merge_commit_sha': pr['mergeCommit']['oid'],
+                              'base': {'repo': {'full_name': 'sample/repo'}}}
+                    record.update(self.live_overrides.get(number, {}))
+                    if '--method' in args:
+                        self.assertEqual(args[args.index('--method') + 1], 'PATCH')
+                        title = args[args.index('-f') + 1].removeprefix('title=')
+                        record['title'] = pr['title'] = title
+                        self.patches.append((number, title))
+                    return json.dumps(record).encode()
                 query = args[args.index('graphql') + 4]
                 self.assertEqual(args[args.index('--hostname') + 1], 'git.example.com')
                 if query == 'query=' + upgrade.QUERY:
@@ -79,7 +97,8 @@ class UpgradeHistory(unittest.TestCase):
 
     def execute(self, **options):
         params = dict(repo='sample/repo', hostname='git.example.com', ref='HEAD', base=None,
-                      apply=None, allow_unsigned=False, expect_candidate=None)
+                      apply=None, allow_unsigned=False, expect_candidate=None,
+                      update_pr_titles=False, apply_pr_titles=None)
         return upgrade.make_candidate(SimpleNamespace(**(params | options)))
 
     def test_dry_run_then_candidate_preserve_graph_and_body(self):
@@ -137,11 +156,13 @@ class UpgradeHistory(unittest.TestCase):
         for hosted_oid in (self.merge, '1' * 40):
             with self.subTest(hosted_oid=hosted_oid):
                 self.pr['mergeCommit']['oid'] = hosted_oid
-                report = self.execute()
+                report = self.execute(update_pr_titles=True)
                 landing, undo = report['review_or_changed_commits']
                 self.assertEqual(landing['subject_new'], '[`🎨✨`] Show preview (#7)')
                 self.assertIn('unique caption', landing['evidence'])
                 self.assertEqual(undo['subject_new'], 'Revert #7 [`🎨✨`] Show preview')
+                self.assertEqual(report['pr_title_updates'][0]['after'], '[`🎨✨`] Show preview')
+        self.assertEqual(self.patches, [])
 
     def test_fallback_rejects_wrong_title_inventory_ambiguous_or_unmerged_pr(self):
         for subject in ('Merge #7 [`🎨✨`] Other wording', 'Merge #7 [`🧩✨`] Show preview',
@@ -149,8 +170,9 @@ class UpgradeHistory(unittest.TestCase):
                         'Merge #100 [`🎨✨`] Show preview'):
             with self.subTest(subject=subject):
                 self.git('commit', '-q', '--amend', '-m', subject)
-                report = self.execute()
+                report = self.execute(update_pr_titles=True)
                 self.assertEqual(report['candidate_tip'], report['source_tip'])
+                self.assertFalse(report['pr_title_updates'])
                 self.assertIn('review', report['review_or_changed_commits'][0])
         self.git('commit', '-q', '--amend', '-m', 'Merge #7 [`🎨✨`] Show preview')
         self.pr['mergeCommit']['oid'] = self.member
@@ -163,6 +185,7 @@ class UpgradeHistory(unittest.TestCase):
         self.git('merge', '--no-ff', 'second', '-qm', '[`🎨✨`] Show preview (#7)')
         report = self.execute(base=first, update_pr_titles=True)
         self.assertIn('multiple local merges', report['review_or_changed_commits'][0]['review'])
+        self.assertFalse(report['pr_title_updates'])
 
     def test_rewritten_caption_refuses_shared_old_id_and_nonmatching_original_trees(self):
         self.git('commit', '-q', '--amend', '-m', 'Merge #7 [`🎨✨`] Show preview')
@@ -175,6 +198,40 @@ class UpgradeHistory(unittest.TestCase):
         row = self.execute()['review_or_changed_commits'][0]
         self.assertIn('different trees', row['review'])
         self.assertNotIn('subject_new', row)
+
+    def test_hosted_updates_use_landed_wording_and_skip_rewrites_on_retry(self):
+        self.git('commit', '-q', '--amend', '-m', '[`🎨✨`] Landed wording (#7)')
+        self.pr['mergeCommit']['oid'] = self.git('rev-parse', 'HEAD')
+        plan = self.execute(update_pr_titles=True)
+        self.assertEqual(plan['candidate_tip'], plan['source_tip'])
+        self.assertEqual(len(plan['pr_title_updates']), 1)
+        Path('review.json').write_text(json.dumps(plan))
+        result = self.execute(apply_pr_titles='review.json')
+        self.assertEqual(result['updated_pr_titles'], [7])
+        self.assertEqual(self.patches, [(7, '[`🎨✨`] Landed wording')])
+        self.assertEqual(self.execute(apply_pr_titles='review.json')['updated_pr_titles'], [])
+        self.assertEqual(len(self.patches), 1)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), plan['source_tip'])
+
+    def test_hosted_updates_refuse_stale_cross_repo_or_forged_plans(self):
+        plan = self.execute(update_pr_titles=True)
+        path = Path('plan.json')
+        for overrides in ({'title': 'Someone renamed this'}, {'state': 'open'},
+                          {'merged_at': None}, {'merge_commit_sha': self.member},
+                          {'base': {'repo': {'full_name': 'fork/repo'}}}):
+            with self.subTest(overrides=overrides):
+                path.write_text(json.dumps(plan))
+                self.live_overrides[7] = overrides
+                with self.assertRaisesRegex(ValueError, 'PR #7'):
+                    self.execute(apply_pr_titles=path)
+        self.live_overrides.clear()
+        for modified in ({**plan, 'repository': 'git.example.com/fork/repo'},
+                         {**plan, 'pr_title_updates': [{**plan['pr_title_updates'][0], 'after': 'Invented'}]},
+                         {**plan, 'pr_title_updates': []}):
+            path.write_text(json.dumps(modified))
+            with self.assertRaises(ValueError):
+                self.execute(apply_pr_titles=path)
+        self.assertFalse(self.patches)
 
     def test_one_parent_landing_subject_needs_review_and_undo_names_target_once(self):
         self.git('switch', '-q', 'topic')
