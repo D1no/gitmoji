@@ -2,6 +2,11 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.13.3 (21 November 2026)
+
+- The checker and commit hook now flag a description line that starts with an issue number, such as `#42`. Git can strip that line during an amend or reword. Start the line with a word, for example `See #42 for the decision.`
+- The rule applies to new drafts across cleanup modes. Stored history keeps its existing validation behavior. Projects can adopt this patch through their usual version pin.
+
 ## 0.13.2 (21 November 2026)
 
 - Install Gitmoji in CI using the public HTTPS clone and checksum-verified release assets.
