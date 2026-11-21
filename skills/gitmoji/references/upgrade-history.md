@@ -13,7 +13,8 @@ The default run reads Git objects and the repository’s merged PRs. The JSON re
 
 Review these decisions against the linked PRs:
 
-- A two-parent merge qualifies when exactly one merged PR in the named repository reports that exact commit as its merge commit. Its caption uses the incoming commits between the two parents. The new body includes the source commit ID and available head and base names from the PR record, followed by the entire original message, including conflict notes. An unmerged closed PR or a number typed into a subject cannot supply this evidence.
+- An exact match between a two-parent merge and a single merged PR’s recorded merge ID identifies the landing. The tool rebuilds the emoji inventory from the incoming commits. It preserves the original message and records the original commit ID and available branch names in a changed commit’s body.
+- An earlier history rewrite can change every merge ID. For a stored caption such as <code>Merge #42 [`🎨✨`] Show preview</code>, the tool also checks the merged PR in the selected repository, the human wording and the inventory recomputed from both parents. The source history must have a single merge claiming that caption. When the original landing object is available, its result tree and both parent trees must match the rewritten merge. Missing evidence or disagreement goes to review. A qualifying merge becomes <code>[`🎨✨`] Show preview (#42)</code>. Repeated trailing references to the integrating PR collapse to one.
 - A merge that lands a rollback PR carries the integrating PR number at the end. Its individual undo commit can qualify separately. For example, when PR #31 rolls back PR #27, its integration row ends in `(#31)`. A proven undo inside it reads `Revert #27 …`, with `Introduced by PR #31.` in the body when GitHub associates that commit uniquely and confirms it appears in the PR.
 - An undo candidate needs a recognizable operation subject and one full Git revert target ID in its parent history. To prove the undo, the tool compares the complete inverse against the actual change using original Git trees. Every changed path, file mode and pair of blob IDs must match. An undo of a merge also needs Git’s first-parent mainline record. These checks apply at every step of a revert chain. Reverting the verified merge of PR #27 yields `Revert #27` followed by the target PR’s caption. Reverting that exact undo yields `Reapply #27`.
 - Intervening changes to other files can coexist with an exact undo. An edit elsewhere in the same affected file changes its blob ID and requires review, even when Git reversed the intended lines cleanly. Partial rollbacks, additional files, empty changes and unproved conflict resolutions also require review. A squash that both reverts a change and adds a feature keeps its original subject. A recorded one-parent PR landing always goes to review because it may be a squash or a rebase.
@@ -48,4 +49,25 @@ Before a shared rollout, keep the source refs and report in a backup. For exampl
 GitHub PR pages and review metadata live on the host. Coordinate with active
 contributors and check the target branch's signing and protection policies.
 
-Promoting any candidate onto shared history is a separate repository-owner decision. This command never pushes, updates hosted PRs, moves tags, or overwrites a branch.
+Promoting any candidate onto shared history is a separate repository-owner decision. The local candidate operation creates only the new branch. Updating a hosted title uses the separate operation below.
+
+## Update titles of already merged PRs
+
+Use the same full clone and the same repository, host and revision range. This also works for a merge whose local subject already has its final form. Creating or publishing a replacement branch is optional.
+
+```sh
+tool=.claude/skills/gitmoji/scripts/gitmoji-upgrade-history.py
+python3 "$tool" --repo OWNER/REPO --ref trunk --update-pr-titles > titles.json
+```
+
+Inspect the `pr_title_updates` entries, including the PR number, the evidence, and each title before and after. Gitmoji takes the title from the landed caption and drops the trailing reference to the PR itself. When the changes are ready, use an account with pull request write access.
+
+```sh
+python3 "$tool" --repo OWNER/REPO --ref trunk --apply-pr-titles titles.json
+```
+
+The apply step recreates the plan and rereads each merged PR immediately before editing its title. If another title changed or GitHub stopped a batch partway, inspect the result and generate a fresh preview. An already-correct title needs no write. GitHub’s title endpoint has no atomic expected-title check. [GitHub PR API](https://docs.github.com/en/rest/pulls/pulls#update-a-pull-request)
+
+## Adopt a release with earlier stamps in history
+
+Change `[vocabulary].version` in the project’s settings, install the matching Gitmoji release and run `gitmoji init`. Commit the version change with the `🔺 gitmoji` adoption marker. New commits receive the new stamp. Historical stamps record the vocabulary used at the time. Projects that previously used draft numbers may retain those stamps. The caption upgrade preserves them. Use `gitmoji history --unmigrated` to inspect older messages against today’s convention.

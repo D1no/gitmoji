@@ -28,25 +28,16 @@ and vocabulary use one release number. Run `gitmoji --version` to check it.
 
 ### Pin the CLI in CI
 
-For a project already using Gitmoji, install the version recorded in
-`gitmoji.toml`. This example uses Python 3.11 or later to read TOML and
-requires Git, curl and a SHA-256 utility. Run it from the project checkout.
-Public release downloads work without GitHub credentials.
+On GitHub Actions, run `gitmoji init --github-workflows` in the project to install the PR commit check and title sync. Commit the generated workflows. On upgrade, change `[vocabulary].version` and rerun `gitmoji init` to refresh managed copies. [Workflow setup](skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles)
+
+For another CI system, run the following from the project checkout. The installer reads the release number from `gitmoji.toml` or `.config/gitmoji.toml` using Python 3.11 or later. It fetches the release tag and runs its checksum-verifying installer. Public downloads work without a GitHub token.
 
 ```sh
-version=$(python3 -c 'from pathlib import Path; import tomllib; print(tomllib.loads(Path("gitmoji.toml").read_text())["vocabulary"]["version"])')
-checkout=$(mktemp -d)
-git -c advice.detachedHead=false clone --quiet --depth 1 --branch "v$version" \
-  https://github.com/D1no/gitmoji.git "$checkout"
-mkdir -p "$checkout/bin"
-GITMOJI_BIN="$checkout/bin" "$checkout/install.sh"
-"$checkout/bin/gitmoji" --version
+tool=$(mktemp -d)
+git clone --quiet --depth 1 https://github.com/D1no/gitmoji.git "$tool/source"
+GITMOJI_BIN="$tool/bin" "$tool/source/install.sh" --pinned
+"$tool/bin/gitmoji" --version
 ```
-
-Use the installed binary by path or add its directory to the runner’s `PATH`.
-On GitHub Actions, `echo "$checkout/bin" >> "$GITHUB_PATH"` makes the command
-available to later steps in the same job. The installer can build the command
-with Cargo when a prebuilt binary is unavailable.
 
 ## Pull request titles
 

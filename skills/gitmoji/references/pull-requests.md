@@ -10,22 +10,12 @@ A PR starts with the reviewer’s title. Gitmoji adds the areas and intentions o
 
 ## Enable automatic PR titles
 
-1. Add the workflow to your default branch. On GitHub.com, use this caller in `.github/workflows/pr-title.yml`. A project that already runs a title formatter should replace it so a single workflow owns the prefix.
+1. From the project checkout, run `gitmoji init --github-workflows` and commit the generated `.github/workflows/pr-title.yml` and `.github/workflows/check-commits.yml`. The first maintains the title with `pull-requests: write`. The second uses `contents: read` to check the incoming commit range. Both also support reusable workflow callers. The runner needs access to the project’s GitHub host and the public Gitmoji distribution. Replace your previous title updater and commit-check job when the new jobs pass.
 
-   ```yaml
-   name: Pull request title
-   on:
-     pull_request_target:
-       types: [opened, reopened, synchronize, edited]
-   permissions:
-     contents: read
-     pull-requests: write
-   jobs:
-     caption:
-       uses: D1no/gitmoji/.github/workflows/pr-title.yml@v0.14.0
-   ```
+   For an existing project, first set `[vocabulary].version` to the release you are adopting. Set `[rules] signature = "agents"` if you want the hook to require agent signatures. An existing workflow at either managed path is backed up as `.before-update` when replaced. Review any local changes before removing the backup. Commit the project settings and workflows yourself. Future plain `gitmoji init` runs refresh the managed copies.
 
-   On a GitHub Enterprise Cloud host with its own domain, or when your organization requires workflows to live in the consumer repository, copy the [complete workflow from v0.14.0](https://github.com/D1no/gitmoji/blob/v0.14.0/.github/workflows/pr-title.yml) to that same path instead. It uses the host of the PR and downloads Gitmoji from its public release. The runner needs access to both hosts.
+   GitHub loads the title workflow from the default branch. The PR that first adds it can keep its human title, or you can paste the output of `gitmoji merge-caption --pr NUMBER --title 'Human title' BASE HEAD` once. Subsequent PRs refresh automatically. [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)
+
 2. Under **Settings → General → Pull Requests**, enable **Allow merge commits** and select **Pull request title and description** as the default message. Administrators can also apply these two settings with the GitHub CLI.
 
    ```sh
@@ -58,34 +48,15 @@ The text output is the live PR title. With `--json`, `title` is that same string
 
 A PR that rolls back earlier work carries its own integrating number at the end, for example `(#42)`. A verified standalone undo inside it can name the earlier PR with `Revert #17 …`. See the [history upgrade guide](upgrade-history.md).
 
-## Preview or merge from the terminal
+## When the merge button is unavailable
 
-Run this from the target repository. The example uses the skill path installed by `gitmoji init`. For another skill installation, use the same script under that skill’s directory.
+For a direct merge of an ordinary PR, preview the title and body with the installed helper. Run from a full clone with Python 3.9 or later, the Gitmoji CLI and an authenticated GitHub CLI.
 
 ```sh
 python3 .claude/skills/gitmoji/scripts/github-merge.py --repo OWNER/REPO --pr 42
 ```
 
-The helper uses GitHub’s PR number, full title, head and base. If your clone lacks the commits, fetch from the remote for the **base repository**, including the PR head for a fork. For a PR targeting `release/2.x` on `origin`, for example:
-
-```sh
-git fetch origin refs/heads/release/2.x refs/pull/42/head
-```
-
-In a shallow clone first fetch the full history with `git fetch --unshallow origin`. Standard output contains the proposed commit subject and body, including the source and destination. Standard error shows the two revision IDs, how many incoming non-merge commits supplied recognized tags, and a SHA-256 preview digest. Read the message and coverage before approving the merge. For example, one recognized heading across six commits means the emojis describe only one of the six. To preserve custom text, conflict notes and trailers, pass the complete original message in a UTF-8 file with `--original-message FILE` on both invocations.
-
-When the repository’s merge decision is made, request a direct merge of an ordinary open PR with the digest from that reviewed preview:
-
-```sh
-python3 .claude/skills/gitmoji/scripts/github-merge.py --repo OWNER/REPO --pr 42 \
-  --merge --expect-preview REVIEWED_SHA256
-```
-
-The helper verifies the host, repository, PR, source and destination revisions, method, proposed message and coverage. If an input changes, inspect a fresh preview. GitHub applies the rules configured for the caller and atomically checks the expected **head**. Its merge endpoint has no corresponding expected-base parameter. The helper rereads the destination immediately before sending the request, so a change after that read can still affect the merge. [GitHub merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request)
-
-The terminal helper requires Python 3.9 or later, a full Git clone, a matching Gitmoji CLI and an authenticated GitHub CLI. On a dedicated Enterprise Cloud domain, pass `--hostname HOST`. Read access suffices for a preview. Landing requires permission to merge.
-
-The explicit merge keeps the PR number at the end of the subject and stores the branch provenance in the body. A merge into a release or integration branch names that destination in the body. A branch sync without a PR keeps its source, destination and conflict notes.
+Review the message, commit coverage and preview digest. Add `--merge --expect-preview REVIEWED_SHA256` to submit that exact proposal. See `--help` for enterprise hosts and preserving a custom message. Use the repository’s normal merge button, stack or queue whenever available.
 
 ## Stacks, queues and squash
 
