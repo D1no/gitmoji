@@ -1,0 +1,40 @@
+# gitmoji.toml for a repository that tracks work with Backlog.md task files.
+# Task ids look like TASK-150 or TASK-134.2.
+
+[ticket]
+patterns = ['TASK-[0-9]+(\.[0-9]+)*']
+example = "TASK-150"
+
+[scope]
+# Scopes a commit may name. Leave empty to allow any.
+allowed = []
+
+[rules]
+untagged = "error"       # error | warn | off for plain subjects at commit time; history still reports them
+lone_second = true   # allow `🛡️` without an area
+trailers = "warn"    # off | warn | error: 🩹 needs Limitation:, 📥 needs Source:
+one_scope = "warn"   # off | warn | error: staged files from more than one scope
+unusual = "warn"        # a pair that rarely makes sense, such as style in infrastructure
+agent_author = "error"  # an agent as author or co-author
+signature = "off"       # off | warn | error: the body ends with _ , the model line and the harness line
+length = "warn"         # off | warn | error: a summary or body that is too long
+description = "error"   # off | warn | error: a commit by a person or an agent with nothing under its first line
+stamp = true            # the hook closes each message with a line such as △ `2.0.0`: the vocabulary it was checked against
+subject_max = 140       # characters in the whole first line
+body_max_lines = 6      # lines of prose at 72 characters; trailers and the signature do not count
+
+
+# Path prefixes per scope, for `gitmoji staged`.
+[paths]
+# app = ["app/"]
+# server = ["server/"]
+
+# Files that suggest an area, for `gitmoji staged`: a file ending or a path prefix.
+[hints]
+# "*.css" = "🎨"
+# "infra/" = "🧱"
+
+# Text that marks an author or co-author as an agent, compared without regard to case.
+# Leave out to use the built-in list of tool addresses and product names.
+[agents]
+# markers = ["anthropic.com", "openai.com", "copilot", "cursoragent"]

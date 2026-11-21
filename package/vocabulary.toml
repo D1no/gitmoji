@@ -1,0 +1,713 @@
+# Gitmoji Triangle vocabulary. One source for the checker, the guide, the skill and the website.
+# Edit entries, rules and tie-breaks here, then rebuild and regenerate (see README.md).
+# The built-in vocabulary takes its release version from Cargo.toml.
+
+[format]
+subject = "<area><behaviour or intent>[modifier] <ticket> (<scope>): <summary>"
+example = "🧩👔 #412 (server): allow an appeal within 30 days of refusal"
+job_example = "🎨💄 — (tokens): take the new hues from Figma"
+marker_example = "🔖 release 1.6.0"
+
+[[rules]]
+title = "Pair first"
+text = "The emojis are the first characters of the line, with no space between them and nothing around them. First the area, then a behaviour or an intent. A lone second emoji is allowed when the area adds nothing."
+
+[[rules]]
+title = "Merge commits"
+text = "An authored commit names its intention. A merge integrates existing commits and can keep its own title. History recognizes merges by their parents and still checks the authored commits they bring in. An optional PR caption summarizes their areas and activities. A verified Revert or Reapply caption names the target PR."
+
+[[rules]]
+title = "One pair, one scope"
+text = "A commit carries one pair. When two seem to fit, the test is: could a reviewer accept this part and send the rest back? The same test says when to stop: if one part is no use without the other, they are one commit. Parts forced by the main change ride along: its types, its ☑️ test, a lockfile. The scope names the package that owns the decision. A change that cannot be accepted in parts stays one commit even when it touches a second package, such as one shape mirrored in two languages."
+
+[[rules]]
+title = "Behaviour or intent"
+text = "A behaviour is a noun: the system now has a different one. An intent is a verb: what you did. If the commit changes what is promised, name the behaviour. Otherwise say what you did."
+
+[[rules]]
+title = "A ticket, or a dash"
+text = "Every commit by a person or an agent names its ticket. A commit made by a job has none and carries an em dash in its place."
+
+[[rules]]
+title = "A third emoji is rare"
+text = "Only for work that is not settled: 🧪 exploration, 🚧 provisional, 💥 breaking. It needs a ticket, and 🏁 or ⚰️ closes it."
+
+[[rules]]
+title = "Write the summary as behaviour"
+text = "Say what the system does now, in the words of the domain: reject a renewal without a licence number."
+
+[[rules]]
+title = "Say why, in the commit and in the code"
+text = "Every commit by a person or an agent has a description under its first line that says why the change was made. And code carries comments where a reader could not guess the reason: why it is the way it is, what must not be changed, where a value comes from. A comment costs an agent almost nothing and saves the next reader, a person, a junior or an agent without your context, from guessing."
+
+[[rules]]
+title = "The author is a person"
+text = "An agent never names itself as author or co-author of a commit. It signs the end of the body with what went into the commit: the model and its effort, the harness and its session, and, where they apply, sub-agents, other agents and research. Every value comes from the harness's record, not from memory."
+
+[[writing]]
+title = "The summary"
+text = "Say what the system does now, in the words of the domain, starting with a verb in lower case: reject a renewal without a licence number. Leave out file names, ticket numbers and how you did it. If the summary needs an 'and' between two different things, look again: it may be two commits."
+
+[[writing]]
+title = "Its length"
+text = "The whole first line, with emojis, ticket and scope, fits in 140 characters. Shorter is better, because a list of commits cuts a long line off. The check says so when the line is longer."
+
+[[writing]]
+title = "The description"
+text = "Under the first line, an empty line, then why this change was made: the reason, why this way and not the obvious one, or the value you chose. One or two lines are usually enough, and six are the most. The check refuses a commit by a person or an agent that has none. Do not retell the diff, list files or describe your process. A commit made by a job and a marker need none."
+
+[[writing]]
+title = "Comments in the code"
+text = "Before you commit, read the change as someone who was not there. Where the reason cannot be seen from the code, write it down beside the code: why it is the way it is, what must not be changed, where a value comes from. Say why, not what the line does."
+
+[[writing]]
+title = "Lines the body may carry"
+text = "Limitation: what a dependency cannot do (needed with 🩹). Source: where content came from (needed with 📥). Broken-by: the commit that caused a 🐛. What decided a 🏁 or a ⚰️. Miss: what you wanted to say when no entry fitted."
+
+[[writing]]
+title = "Who wrote it"
+text = "The author of a commit is the person responsible for it. An agent never adds itself as author or with a Co-Authored-By line. Instead it ends the body with an empty line and a signature that says what went into the commit. An underscore on its own line, which the hook replaces by △ and, between backticks, the version of this vocabulary the message was checked against; the hook closes every message with that line, also one no agent signed. Then the model and, in parentheses, its effort, and after a comma the agent's name, only if a person gave it one: example-model (high), editor. Then the harness and, in parentheses, the session, if there is one: Claude Code (example-session). Then, only where they apply: Sub-agents: 2 × example-helper (medium). Team: the other agents it exchanged messages with. Research: 3 searches, 12 pages. Every value comes from the harness's own record of the session, never from memory. The skill has a script per harness that prints the signature. Where no record can be found, write unknown."
+
+[[writing]]
+title = "Emojis, not shortcodes"
+text = "Only the emoji characters are committed. If you type shortcodes such as :jigsaw::necktie:, the hook writes 🧩👔 for you."
+
+[[retired]]
+emoji = "🚑️"
+into = "🐛"
+note = "Hotfix was folded into Fix. Urgency goes on the ticket as a label."
+
+[[retired]]
+emoji = "♿️"
+into = "🚸, 💄 or 💬"
+note = "Accessibility is no longer an entry. Tag the commit by what changed: the steps of a flow, the style, the wording."
+
+[[retired]]
+emoji = "🔬"
+into = "🧪, 📝 or 📊"
+note = "Research is no longer an entry. For a study or trial in progress, name what it changed and add 🧪 as a third emoji. For a finished finding or a verification record, use 📝 for prose and 📊 for numbers."
+
+[[groups]]
+slot = "area"
+name = "system"
+question = "Does it run in production?"
+tiebreak = "Experience is what people get; Capability is what makes it possible. Choose 🧠 when a model's output is what changes, 🗃️ when stored or derived data is, 🧱 for what it runs on. 🛰️ is for services, apps and platforms we reach over a wire; the host operating system, a device or the browser is 🧩 or 🎨. Written-out code that only serves a model or an agent, such as an exporter, is 🧩. A demo or lab app shown to people outside the team is product, so 🎨. The area is the side of the coin, not the device or the folder."
+
+  [[groups.entries]]
+  emoji = "🎨"
+  code = ":art:"
+  name = "Experience"
+  meaning = "The user's side of the coin: what people see, touch, read and feel, whether it is a feature or a quality such as speed or polish."
+  core = true
+  typical = ["looks", "feel", "words"]
+
+  [[groups.entries]]
+  emoji = "🧩"
+  code = ":jigsaw:"
+  name = "Capability"
+  meaning = "The other side of the coin: what the system does to make that experience possible. Services and logic."
+  core = true
+  typical = ["domain logic", "protection", "connections"]
+
+  [[groups.entries]]
+  emoji = "🛰️"
+  code = ":artificial_satellite:"
+  name = "Integration"
+  meaning = "Connections to systems outside this repo, internal or external."
+  core = true
+  typical = ["connections", "protection"]
+
+  [[groups.entries]]
+  emoji = "🗃️"
+  code = ":card_file_box:"
+  name = "Data"
+  meaning = "The running system's own schemas, migrations and stored data."
+  core = true
+  typical = ["from data", "what it keeps"]
+
+  [[groups.entries]]
+  emoji = "🧠"
+  code = ":brain:"
+  name = "AI"
+  meaning = "Behaviour that was fitted, not written out: everything a model or agent does inside the system. Choose 🧠 when a model's output is what changes, 🗃️ when stored or derived data is."
+  core = true
+  typical = ["from data", "protection"]
+
+  [[groups.entries]]
+  emoji = "🧱"
+  code = ":bricks:"
+  name = "Infrastructure"
+  meaning = "Cloud resources, containers and environments."
+  core = true
+  typical = ["controls", "what it keeps"]
+
+[[groups]]
+slot = "area"
+name = "workbench"
+question = "Or does it help us build the system?"
+tiebreak = "Only for what the builders themselves use: 🧑‍💻 their setup and tools, 👷 the pipeline's own machinery, 🤖 what only coding agents work with. A test, a document or a playground takes the area of the thing it is about."
+
+  [[groups.entries]]
+  emoji = "🧑‍💻"
+  code = ":technologist:"
+  name = "Builder experience"
+  meaning = "What the people who build the product work with, engineers, data scientists and product people alike: local setup, scripts, internal pages and explorers."
+  core = true
+  typical = ["quality", "words"]
+
+  [[groups.entries]]
+  emoji = "👷"
+  code = ":construction_worker:"
+  name = "CI"
+  meaning = "Pipelines, builds and checks."
+  core = true
+  typical = ["domain logic", "quality"]
+
+  [[groups.entries]]
+  emoji = "🤖"
+  code = ":robot:"
+  name = "Agent toolkit"
+  meaning = "What only coding agents work with: their instructions on how to work, memory, skills and their toolbelt."
+  core = true
+  typical = ["words"]
+
+[[groups]]
+slot = "behaviour"
+name = "domain logic"
+question = "What does the business want?"
+tiebreak = "A rule is an answer: yes, no, how much. A process is a sequence: what happens next, and when. If time passes or something waits, it is a process."
+
+  [[groups.entries]]
+  emoji = "👔"
+  code = ":necktie:"
+  name = "Business rule"
+  meaning = "An answer the domain gives: yes, no or how much. Eligibility, fees, limits. No time passes."
+  areas = ["🧩", "🗃️", "🧠", "🛰️"]
+  example = "🧩👔 waive fee for renewals under 30 days late"
+  core = true
+
+  [[groups.entries]]
+  emoji = "⛓️"
+  code = ":chains:"
+  name = "Process"
+  meaning = "A sequence the domain wants: what happens next, and when. Waiting, retries, schedules, allowed status changes."
+  example = "🧩⛓️ retry failed portal submissions hourly"
+
+[[groups]]
+slot = "behaviour"
+name = "controls"
+question = "Who can change how it behaves without changing the code? Product, policy, the user, engineers."
+tiebreak = "Ask who turns the knob. Product, for everyone or a subset: 🎚️. A policy about who may: 🛂. Each user for themselves, or a customer's admin for their organisation: ⚙️. Our own engineers or operators, per environment, per case or while it runs, such as a sampling rate or a pause: 🔧. Sharing and access between legitimate users is 🛂; a defence against someone hostile is 🔒️."
+
+  [[groups.entries]]
+  emoji = "🎚️"
+  code = ":level_slider:"
+  name = "Switch"
+  meaning = "A feature flag. The product side turns it, for everyone or for a subset. Often stays for the life of the product, because permissions are built on it."
+  example = "🧩🎚️ put deleting a report behind a switch"
+
+  [[groups.entries]]
+  emoji = "🛂"
+  code = ":passport_control:"
+  name = "Permissions"
+  meaning = "Who may do what: roles, policies and entitlements for people, built on switches, and the identities our own services run as."
+  example = "🧩🛂 let only owners delete their reports"
+
+  [[groups.entries]]
+  emoji = "⚙️"
+  code = ":gear:"
+  name = "Setting"
+  meaning = "Part of the product's design: something each user chooses for themselves, such as the start screen or dark mode. A tenant admin's choices for their organisation count too."
+  example = "🎨⚙️ let people choose their start screen"
+
+  [[groups.entries]]
+  emoji = "🔧"
+  code = ":wrench:"
+  name = "Configuration"
+  meaning = "What engineers set, per environment or per case: how many pods, which endpoint, a model's temperature for one kind of question."
+  example = "🧠🔧 lower the answer temperature"
+
+[[groups]]
+slot = "behaviour"
+name = "protection"
+question = "What if something is wrong?"
+tiebreak = "A guard stops bad input or data before the step is tried. Error handling is everything from the moment a step has failed: what happens next, the error code the failure is reported under, and what people are told. It is not only about code that breaks: a failure that is reported back badly is an error-handling gap. The catalogue of error codes belongs here, with a meaning for each code; add a code as a commit of its own, and reuse an existing one where it fits. With 🧩 it is the code for our own tools, with 🎨 the description for the person using the product. Sending the codes to a tool such as Sentry or PostHog is 🔊; translating the description is 🌐. Security keeps out someone hostile and keeps private content from being stored or sent: encryption, authentication, redaction, a patched hole. A guard is about correct input, not about privacy. Who among legitimate users may do what is 🛂, not 🔒️."
+
+  [[groups.entries]]
+  emoji = "🛡️"
+  code = ":shield:"
+  name = "Validation guard"
+  meaning = "Stops what should not come in, input or data, before acting on it. In the AI area it is a best-guess check and arrives with examples."
+  example = "🧩🛡️ reject renewal without a licence number"
+  core = true
+
+  [[groups.entries]]
+  emoji = "🥅"
+  code = ":goal_net:"
+  name = "Error handling"
+  meaning = "What happens after a step has failed, and how the failure is reported back: how it recovers, the stable error code it carries, and the meaningful description people are shown. The codes are what tools such as Sentry or PostHog pick up later."
+  example = "🧩🥅 give a declined payment its own error code"
+
+  [[groups.entries]]
+  emoji = "🔒️"
+  code = ":lock:"
+  name = "Security"
+  meaning = "Definite controls against an attacker: encryption, authentication, patched vulnerabilities. Also privacy."
+  example = "🧩🔒️ encrypt report shares at rest"
+
+[[groups]]
+slot = "behaviour"
+name = "connections"
+question = "How do the pieces meet?"
+tiebreak = "Contract is the agreed shape where two pieces meet; it takes the area of what it describes, so a stored table's shape is 🗃️🏷️ and a shape passed between modules is 🧩🏷️. Wiring connects pieces that exist. Sends out is something leaving our system. Mounting a finished piece where users first reach it is ✨, not 🔌."
+
+  [[groups.entries]]
+  emoji = "🏷️"
+  code = ":label:"
+  name = "Contract"
+  meaning = "An agreed shape: types, interfaces and API schemas between modules, or the schema of something stored."
+  example = "🧩🏷️ define ShareReport input and result types"
+
+  [[groups.entries]]
+  emoji = "🔌"
+  code = ":electric_plug:"
+  name = "Wiring"
+  meaning = "Connects existing pieces: a resolver, a route, a registration, navigation."
+  example = "🧩🔌 expose renewPermit mutation"
+  core = true
+
+  [[groups.entries]]
+  emoji = "📤"
+  code = ":outbox_tray:"
+  name = "Sends out"
+  meaning = "Something leaves our system: an email, a notification, a webhook call, an event on a queue, an exported file."
+  example = "🧩📤 email recipients when a report is shared"
+
+[[groups]]
+slot = "behaviour"
+name = "what it keeps"
+question = "What does it hold on to?"
+tiebreak = "State is anything it remembers, in memory or stored for good: fields, tables, caches, client stores. A new table or field is 💾. Secrets are credentials of the repository and its deployments."
+
+  [[groups.entries]]
+  emoji = "💾"
+  code = ":floppy_disk:"
+  name = "State"
+  meaning = "What it remembers, in memory or stored for good: fields, tables, caches, client stores."
+  example = "🎨💾 keep the shared-with list in the report store"
+
+  [[groups.entries]]
+  emoji = "🔐"
+  code = ":closed_lock_with_key:"
+  name = "Secrets"
+  meaning = "Repo and deployment secrets: added, rotated, removed. Not user key management."
+  example = "🧱🔐 rotate the storage account key"
+
+[[groups]]
+slot = "behaviour"
+name = "from data"
+question = "What does it take from data, and what does it make of it?"
+tiebreak = "In order: the synthetic examples, what is made from data, what counts as a good result, what the numbers show people. 📊 is for numbers: scores, statistics, charts; a finding or a verification written in prose is 📝. Real data never enters the repository."
+
+  [[groups.entries]]
+  emoji = "🎭"
+  code = ":performing_arts:"
+  name = "Synthetic data"
+  meaning = "Made-up or anonymised records that are safe to keep in the repository: fixtures, seeds, evaluation sets, samples derived from production. Real data never enters the repository."
+  example = "🗃️🎭 add synthetic permits for testing"
+
+  [[groups.entries]]
+  emoji = "🧮"
+  code = ":abacus:"
+  name = "Transformation"
+  meaning = "Data made from other data: a dbt model, a cleaning or normalising step, a feature computed for a model."
+  areas = ["🗃️", "🧠", "🧩"]
+  example = "🗃️🧮 build one row per visit and enclosure"
+
+  [[groups.entries]]
+  emoji = "🎯"
+  code = ":dart:"
+  name = "Objective"
+  meaning = "What counts as a good result: a loss function, a metric, the scorer of an evaluation."
+  areas = ["🧠", "🗃️", "🧩"]
+  example = "🧠🎯 score answers by whether they name the right enclosure"
+
+  [[groups.entries]]
+  emoji = "📊"
+  code = ":bar_chart:"
+  name = "Report"
+  meaning = "What the numbers show people: statistics, dashboards, the recorded scores of a run, a notebook rendered to PDF. Built to last, unlike a study."
+  example = "🧩📊 add the monthly appeals report"
+
+[[groups]]
+slot = "behaviour"
+name = "looks"
+question = "What do people see?"
+tiebreak = "What people see. Style is colour and type, layout is how things are arranged, delight is a moment people enjoy, usually through movement, assets are files such as images and models. Movement that nobody would miss is not 💫. When the arrangement itself must change, on any screen or across a fold, it is 📐; when the same arrangement is only made to work on a named device or system, it is 📱."
+
+  [[groups.entries]]
+  emoji = "💄"
+  code = ":lipstick:"
+  name = "Style"
+  meaning = "Colours, typography, theme, design tokens."
+  areas = ["🎨"]
+  example = "🎨💄 make the brand red less red"
+
+  [[groups.entries]]
+  emoji = "📐"
+  code = ":triangular_ruler:"
+  name = "Layout"
+  meaning = "The arrangement itself changes: spacing, positioning, sizing, how things reflow. On any screen, including across a fold."
+  areas = ["🎨"]
+  example = "🎨📐 reflow the card grid across the fold of a folding phone"
+
+  [[groups.entries]]
+  emoji = "💫"
+  code = ":dizzy:"
+  name = "Delight"
+  meaning = "A small moment that makes the product a pleasure to use: an animation, a transition, a touch of feedback people notice. Movement is the usual means, not the point."
+  areas = ["🎨"]
+  example = "🎨💫 let a card flip over when it is tapped"
+
+  [[groups.entries]]
+  emoji = "🍱"
+  code = ":bento:"
+  name = "Assets"
+  meaning = "Logos, images, icons, video, fonts."
+  areas = ["🎨"]
+  example = "🎨🍱 add the new app icon set"
+
+[[groups]]
+slot = "behaviour"
+name = "feel"
+question = "How does it respond to people?"
+tiebreak = "How it responds. Interaction is the steps of a flow. Fit is making existing behaviour work on a named device, screen class, browser or operating system, with the arrangement and the steps unchanged; its area is 🎨 or 🧩, whichever the change is part of. When the arrangement itself must change it is 📐. If one change needs more than one of these, what a reviewer could defer decides the commits. A component people operate that is built but not yet reachable is 🚸; the commit where users first reach it is ✨."
+
+  [[groups.entries]]
+  emoji = "🚸"
+  code = ":children_crossing:"
+  name = "Interaction"
+  meaning = "Touch, gestures, forms and the steps of a flow."
+  areas = ["🎨"]
+  example = "🎨🚸 add a shortcut that submits the renewal form"
+
+  [[groups.entries]]
+  emoji = "📱"
+  code = ":iphone:"
+  name = "Fit"
+  meaning = "Existing behaviour is made to work on a named device, screen class, browser or operating system. The arrangement and the steps stay as they are."
+  example = "🧩📱 record the address of the open web page on Linux as well"
+
+
+[[groups]]
+slot = "behaviour"
+name = "words"
+question = "What does it say?"
+tiebreak = "Text is the wording itself in the language we write in; rewording a message is 💬. Language is everything that lets it be said in another language, and each translation; making a message translatable or translating it is 🌐. The error codes that messages are looked up by are 🥅. Documentation explains or records something for a reader and takes the area of what it is about. Numbers and charts are 📊."
+
+  [[groups.entries]]
+  emoji = "💬"
+  code = ":speech_balloon:"
+  name = "Text"
+  meaning = "Wording and literals."
+  areas = ["🎨", "🧠"]
+  example = "🎨💬 reword the renewal confirmation"
+
+  [[groups.entries]]
+  emoji = "🌐"
+  code = ":globe_with_meridians:"
+  name = "Language"
+  meaning = "Making the product speak more than one language: looking messages up by key or code, the catalogue files translators work in, formats for dates and numbers, and the translations themselves."
+  areas = ["🎨", "🧩", "🧠"]
+  example = "🎨🌐 add German error messages"
+
+  [[groups.entries]]
+  emoji = "📝"
+  code = ":memo:"
+  name = "Documentation"
+  meaning = "Explains something to its readers: user guides, API docs, runbooks, contributor guides. It takes the area of what it explains; the summary names the reader when that matters."
+  example = "🧑‍💻📝 add a how-to-contribute guide"
+
+[[groups]]
+slot = "behaviour"
+name = "quality"
+question = "How well does it run, and how do we know?"
+tiebreak = "☑️ is any check on one piece that passes or fails. ✅ is only a user's story played through on the real product, such as a run on real devices; it is told from the user's side, so its area is usually 🎨, and it is its own commit. Writing down what such a run found is 📝. 🕹️ is a place to try a part by hand. A test or a story written together with the thing it covers rides along in that commit; it gets its own commit when it is the point. A check that refuses data while the system runs is 🛡️; a scorer is 🎯."
+
+  [[groups.entries]]
+  emoji = "☑️"
+  code = ":ballot_box_with_check:"
+  name = "Test"
+  meaning = "A check on one piece of our own work that passes or fails before it ships: unit, contract, snapshot. It takes the area of what it checks, not 👷."
+  example = "🧩☑️ cover the fee waiver rule"
+  core = true
+
+  [[groups.entries]]
+  emoji = "✅"
+  code = ":white_check_mark:"
+  name = "Journey"
+  meaning = "A user's story played through on the real thing: someone who has state, creates state and extends it, run in a simulator or a production-like environment. Written so it could become product documentation."
+  example = "🎨✅ a season-ticket holder buys a guest ticket on a phone"
+
+  [[groups.entries]]
+  emoji = "🕹️"
+  code = ":joystick:"
+  name = "Playground"
+  meaning = "A place to try one part of the system on its own, without building the whole product: a component library, a notebook page, a simulator, a device rig."
+  example = "🎨🕹️ publish the component library on every merge"
+
+  [[groups.entries]]
+  emoji = "⚡️"
+  code = ":zap:"
+  name = "Speed"
+  meaning = "Faster or lighter."
+  example = "🗃️⚡️ index permits by expiry date"
+
+  [[groups.entries]]
+  emoji = "🔊"
+  code = ":loud_sound:"
+  name = "Telemetry"
+  meaning = "Signals the system emits: logs, metrics, traces, healthchecks."
+  example = "🧩🔊 log every portal submission"
+
+[[groups]]
+slot = "intent"
+name = "add"
+question = "Did something appear?"
+tiebreak = "Use these when no behaviour names the change. New is a self-standing unit with a name and a job of its own, such as a service, a collector or a package. Feature is the one commit where users first gain something, including the commit that mounts a finished piece where they can reach it; later refinements of the same flow are 🚸. A ✨ is followed on the same ticket by a ✅, once the product can be run that way: a user getting through it on the real thing. Until then the ticket says the journey is missing. Scaffold is groundwork with no behaviour."
+
+  [[groups.entries]]
+  emoji = "🆕"
+  code = ":new:"
+  name = "New"
+  meaning = "A new unit with a name and a job of its own, such as a service, a collector or a package, when no behaviour names it."
+  example = "🧩🆕 add a permit renewal service"
+  core = true
+
+  [[groups.entries]]
+  emoji = "✨"
+  code = ":sparkles:"
+  name = "Feature"
+  meaning = "Users can now do something they could not do before."
+  example = "🎨✨ let users renew a permit from the app"
+  core = true
+
+  [[groups.entries]]
+  emoji = "🏗️"
+  code = ":building_construction:"
+  name = "Scaffold"
+  meaning = "Groundwork with no behaviour of its own: project setup, base components, helpers, empty views and routes."
+  example = "🎨🏗️ add screen shells and navigation"
+
+[[groups]]
+slot = "intent"
+name = "repair"
+question = "Was something wrong, or in the way?"
+tiebreak = "Ask where the cause lives. In our own code: 🐛. The outside moved: 👽️. A limit of a dependency or tool that we adapt to: 🩹, with a Limitation: line. Undoing our own earlier work by hand, such as a rollback: ⏪️ (a plain git revert keeps the line git writes). Use these only when the commit does not change what is promised; if it does, name the behaviour."
+
+  [[groups.entries]]
+  emoji = "🐛"
+  code = ":bug:"
+  name = "Fix"
+  meaning = "It did the wrong thing; now it does the right thing."
+  example = "👷🐛 fix image cache key"
+  core = true
+
+  [[groups.entries]]
+  emoji = "🩹"
+  code = ":adhesive_bandage:"
+  name = "Accommodation"
+  meaning = "Adapts our code to a limit in a dependency or tool. The body names the limit in a Limitation: line. It can be permanent and can be the right decision."
+  example = "🧩🩹 parse portal dates by hand"
+  core = true
+  trailer = "Limitation"
+
+  [[groups.entries]]
+  emoji = "👽️"
+  code = ":alien:"
+  name = "Outside change"
+  meaning = "It broke or had to change because something outside this repo moved."
+  example = "🛰️👽️ handle renamed login button"
+  core = true
+
+  [[groups.entries]]
+  emoji = "⏪️"
+  code = ":rewind:"
+  name = "Reverted"
+  meaning = "Undoes earlier work by hand, such as a migration rollback or a downgrade. A commit made with git revert keeps the line git writes and needs no tag."
+  example = "🗃️⏪️ roll back applicant_name drop"
+
+[[groups]]
+slot = "intent"
+name = "reshape"
+question = "Did the structure change?"
+tiebreak = "Refactor stays inside one unit. Extracted makes a self-standing unit. Folded in merges into something that already exists."
+
+  [[groups.entries]]
+  emoji = "♻️"
+  code = ":recycle:"
+  name = "Refactor"
+  meaning = "Restructuring inside a unit: moves, renames, internal architecture. No behaviour change. Often prepares an extraction."
+  example = "🧩♻️ separate date helpers from permit logic"
+  core = true
+
+  [[groups.entries]]
+  emoji = "✂️"
+  code = ":scissors:"
+  name = "Extracted"
+  meaning = "Split out into a self-standing unit with its own entry point."
+  example = "🧩✂️ extract date helpers into their own package"
+  core = true
+
+  [[groups.entries]]
+  emoji = "🪢"
+  code = ":knot:"
+  name = "Folded in"
+  meaning = "Merged into something that already exists: a duplicate into the original when it is the same thing and not merely similar, or an extracted unit back into its consumers."
+  example = "🧩🪢 use the shared date formatter instead"
+  core = true
+
+[[groups]]
+slot = "intent"
+name = "remove"
+question = "Did something go away?"
+tiebreak = "Hygiene removes what nothing used. Remove takes out something that was in use."
+
+  [[groups.entries]]
+  emoji = "🧹"
+  code = ":broom:"
+  name = "Hygiene"
+  meaning = "Dead code, redundant tests, formatting. No design change."
+  example = "🧩🧹 delete unused portal helpers"
+  core = true
+
+  [[groups.entries]]
+  emoji = "🔥"
+  code = ":fire:"
+  name = "Remove"
+  meaning = "Takes out something that was in use."
+  example = "🎨🔥 remove the old permit list screen"
+
+[[groups]]
+slot = "intent"
+name = "take in"
+question = "Did it come from outside the code we write?"
+tiebreak = "➕ ⬆️ ➖ are dependencies coming, changing and going. 📦️ is content rebuilt by a tool from our own sources. 📥 is content brought in from outside, with a Source: line. Prefer a behaviour when one names what the content is."
+
+  [[groups.entries]]
+  emoji = "➕"
+  code = ":heavy_plus_sign:"
+  name = "Dependency added"
+  meaning = "A new dependency enters."
+  example = "🧩➕ add jsonwebtoken"
+  core = true
+
+  [[groups.entries]]
+  emoji = "⬆️"
+  code = ":arrow_up:"
+  name = "Dependency upgraded"
+  meaning = "Upgraded or pinned."
+  example = "🎨⬆️ upgrade Expo to the next SDK"
+  core = true
+
+  [[groups.entries]]
+  emoji = "➖"
+  code = ":heavy_minus_sign:"
+  name = "Dependency removed"
+  meaning = "A dependency leaves."
+  example = "🧩➖ remove Temporal"
+
+  [[groups.entries]]
+  emoji = "📦️"
+  code = ":package:"
+  name = "Regenerated"
+  meaning = "Generated files rebuilt from sources in this repo: code graphs, compiled output, generated types."
+  example = "🤖📦️ refresh the code graph"
+
+  [[groups.entries]]
+  emoji = "📥"
+  code = ":inbox_tray:"
+  name = "Imported"
+  meaning = "Brought in from a run or system outside the repo. The commit body names the source."
+  example = "🧠📥 take over optimized prompts from run 42"
+  trailer = "Source"
+
+[[groups]]
+slot = "intent"
+name = "close"
+question = "Does it close an open end?"
+tiebreak = "Finished keeps the result of something left open. Buried removes it. Rolled out opens a switch or a version to more people. A closer says what decided it."
+
+  [[groups.entries]]
+  emoji = "🏁"
+  code = ":checkered_flag:"
+  name = "Finished"
+  meaning = "Closes what was left open and keeps the result: a trial adopted and its switch removed, a provisional version replaced, a migration done. It says what decided it."
+  closes = true
+  example = "🎨🏁 replace sample data with live permit status"
+  core = true
+
+  [[groups.entries]]
+  emoji = "⚰️"
+  code = ":coffin:"
+  name = "Buried"
+  meaning = "Closes what was left open and removes the result. It says what decided it."
+  closes = true
+  example = "🧩⚰️ bury the Temporal experiment"
+
+  [[groups.entries]]
+  emoji = "🚀"
+  code = ":rocket:"
+  name = "Rolled out"
+  meaning = "A rollout step: a switch or a trial opened to more users, or a version promoted to an environment."
+  example = "🎨🚀 open the new chat to all users"
+
+[[groups]]
+slot = "marker"
+name = "stand alone"
+question = "Two rare commits carry one emoji and no issue."
+tiebreak = "One emoji on its own: no other emoji, no ticket, no scope."
+
+  [[groups.entries]]
+  emoji = "🔖"
+  code = ":bookmark:"
+  name = "Release"
+  meaning = "Made by the release job. The git tag on this commit triggers CI/CD."
+  example = "🔖 release 1.6.0"
+
+  [[groups.entries]]
+  emoji = "🔺"
+  code = ":small_red_triangle:"
+  name = "Convention revised"
+  meaning = "The repository adopts a version of this vocabulary, or moves to a new one: which meanings change for it. The version stands between backticks, as it does on the line that closes a message."
+  example = "🔺 gitmoji `2.0.0`: pairs replace single emojis"
+
+[[groups]]
+slot = "modifier"
+name = "not settled"
+question = "Is it a trial, a stopgap, or something others must adapt to? Each needs a labelled issue. 🏁 or ⚰️ closes it."
+tiebreak = "A third emoji, and rare. 🧪 is work merged as a trial, to learn or to try something; it ends in 🏁 or ⚰️, and nothing settled may depend on it. Building the direction a ticket has chosen is not a trial, even when the ticket lists open questions. 🚧 is a stopgap. 💥 means consumers must adapt."
+
+  [[groups.entries]]
+  emoji = "🧪"
+  code = ":test_tube:"
+  name = "Exploration"
+  meaning = "Work done to learn or to try something out: a study in a notebook, a comparison of candidates, an alternative approach in the product. Not settled. It ends kept (🏁) or dropped (⚰️)."
+  example = "🧩⛓️🧪 try Temporal for the review workflow"
+  core = true
+
+  [[groups.entries]]
+  emoji = "🚧"
+  code = ":construction:"
+  name = "Provisional"
+  meaning = "A temporary version, for a demo or to unblock other work. An admission of reality, not a fault. Replaced or removed later."
+  example = "🎨🎭🚧 show permit status from sample data"
+  core = true
+
+  [[groups.entries]]
+  emoji = "💥"
+  code = ":boom:"
+  name = "Breaking"
+  meaning = "Consumers must adapt."
+  example = "🗃️🏷️💥 drop the legacy applicant_name column"
+  core = true

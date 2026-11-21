@@ -1,0 +1,226 @@
+# Smoke test for the Triangle vocabulary and checker.
+#
+# Four made-up product stories written out as commit subjects. Together they use every
+# entry of the vocabulary. Every line that is not a comment must pass `gitmoji check`
+# with the default settings.
+# A comment starting with `# hard:` marks the line above it as one where tagging was a
+# judgement. Lines starting with `##` are phases of a story.
+#
+# The tags are one author's choices. They are a test of the tool, not a reference for
+# how each line should be tagged.
+
+### Story 1: a zoo guide, from pipeline to product
+
+## Data engineers: dbt and Dagster
+🗃️🏗️ #501 (pipelines): set up the dbt project and the Dagster code location
+🗃️➕ #501 (pipelines): add dbt and Dagster
+🛰️🔌 #501 (pipelines): load gate scans from the ticketing system
+🗃️🧮 #501 (pipelines): clean gate scans into one row per scan
+🗃️👔 #501 (pipelines): count a visit when a scan is followed by 30 seconds at an enclosure
+🗃️🧮 #501 (pipelines): build one row per visit and enclosure
+🗃️🏷️ #501 (pipelines): publish the columns and types of the visits table
+🗃️🛡️ #501 (pipelines): stop the run when a visit has no enclosure
+🗃️⛓️ #501 (pipelines): rebuild visits every night after the gates close
+🗃️🥅 #501 (pipelines): retry the gate load three times
+🗃️🔊 #501 (pipelines): report how fresh the visits table is
+🧱🔧 #501 (infra): give the nightly run four workers
+## Data scientists: a trial in marimo notebooks
+🧠🆕🧪 #510 (notebooks): add a notebook that answers questions from the visits table
+🧠🎭🧪 #510 (notebooks): add sixty sample visitor questions
+🧠🎯🧪 #510 (notebooks): score answers by whether they name the right enclosure
+🧠🐛🧪 #510 (notebooks): keep closed enclosures out of the answers
+🧠🔧🧪 #510 (notebooks): try a lower temperature for Arctic questions
+🧠📊🧪 #510 (notebooks): record the scores per zoo section
+🧠🏁 #510 (notebooks): keep section-aware answers and move them into the api
+👷🔌 #510 (ci): run the answer scoring on every pull request
+🧠🕹️ #512 (notebooks): publish the notebook as a page for trying questions without the app
+🧠📊 #512 (ci): add a PDF of the answer scores to every merge
+## Into the product: Expo app and api
+🧩🏷️ #520 (api): define the question and answer types for the zoo guide
+🧠🆕 #520 (api): add the zoo guide that answers from visits
+🧠🛡️ #520 (api): refuse questions that are not about the zoo
+🧠🔧 #520 (api): set the temperature per zoo section
+🧩🔌 #520 (api): expose the askGuide endpoint
+🧩🔌 #520 (api): expose the per-section guide configuration
+🧩🎚️ #520 (api): put the zoo guide behind a switch
+🎨🚸 #520 (app): ask the guide from an enclosure page
+🎨🥅 #520 (app): say so when the guide cannot answer
+🎨💫 #520 (app): let the answer unfold as it arrives
+🎨💬 #520 (app): greet visitors by the section they are in
+🎨🚸 #520 (app): read answers aloud with the screen reader
+🎨✨ #520 (app): let visitors ask the zoo guide
+🧩🚀 #520 (api): open the guide to season-ticket holders
+## A new model arrives: Mastra and compiled prompts
+🧠➕🧪 #530 (prompts): add Mastra to compile prompts
+🧠🎭🧪 #530 (evals): add 200 visitor questions with expected answers
+🧠⛓️🧪 #530 (prompts): compile prompts against the evaluation set
+🧠🏁 #530 (prompts): keep compiled prompts as the way prompts are made
+🧠⬆️ #531 (api): move the guide to the new model
+# hard: Still a judgement. 👽️ if the old model was switched off: the line is whether we moved or the outside did.
+🧠👽️ #531 (api): stop the new model padding tropical answers
+🧠📥 #531 (prompts): take over prompts compiled for the new model in run 87
+# hard: Still a judgement. 📦️ if the compile only used sources in this repo. A model call is not repeatable, so 📥 with a Source: line.
+## Fitting the guide: ordinary work, no third emoji
+🧠🎯 #532 (evals): count a wrong enclosure twice as heavily as a vague answer
+🧠🔧 #532 (api): raise the Arctic temperature for the new model
+🧠📊 #532 (evals): record the scores of the new prompts per zoo section
+🧠🎭 #532 (evals): add forty questions about night-time enclosures
+🧠🎯 #532 (evals): score answers per section, not overall
+
+### Story 2: the whole lifecycle, ending with a baseball cap
+
+## Adopting the convention
+🔺 gitmoji `2.0.0`: pairs replace single emojis
+## Platform: Azure, Kubernetes, secrets
+🧱🆕 #601 (infra): describe the Azure resource group and the cluster as code
+🧱🛂 #601 (infra): let the deploy identity pull images and nothing else
+🧱🔐 #601 (infra): keep the database password in the key vault
+🧱🔧 #601 (infra): run three api pods in production and one in staging
+🧱🔊 #601 (infra): alert when a pod restarts more than twice an hour
+## Workbench: dev container, task files, agents
+🧑‍💻🆕 #602 (devcontainer): add a dev container that needs only Docker
+🧑‍💻🎭 #602 (devcontainer): start the dev container with synthetic visits loaded
+🧑‍💻☑️ #602 (ci): check in the pipeline that a breakpoint can be set in VS Code
+🧑‍💻🆕 #603 (tasks): add task files that run any package locally
+🧑‍💻📱 #603 (tasks): run the app on a plugged-in Android phone or iPhone with one task
+🤖🆕 #604 (toolbelt): add a script that lists the packages a change touches
+🤖📝 #604 (agents): tell agents to reach for the toolbelt before writing a script
+🤖♻️ #605 (agents): split the root instructions into one short entry per package
+🧩📝 #605 (docs): explain how the packages fit together
+## Switches, policies, entitlements
+🧩🎚️ #610 (api): add a switch each for creating, reading, changing and deleting cards
+🧩➕ #610 (api): add Cerbos
+🧩🛂 #610 (policies): let only a card's owner trade it
+🧩🛂 #610 (policies): give season-ticket holders the premium card set
+🎨🎚️🧪 #611 (app): show half of visitors the new card layout
+🧩🔊🧪 #611 (api): count trades per card layout
+🎨📊🧪 #611 (app): record that the new layout led to more trades
+🎨🏁 #611 (app): keep the new card layout and remove its switch
+# hard: A limit that stays. The closer now names its evidence, the 📊 above. But a switch flipped in the flag service leaves no commit unless its state is mirrored into the repository.
+🧩🔧 #612 (api): declare the map key in the env schema
+🧩👔 #613 (pricing): apply Germany's reduced VAT rate to tickets
+🧩👔 #614 (api): keep card trading off where the law forbids it
+# hard: 👔, 🎚️ or 🔧? Ask who turns it. The law decides, so it is a rule. If product could turn it per country it would be 🎚️; if engineers set it per deployment, 🔧.
+## Events, workflows, shared logic
+🛰️🔌 #620 (events): read enclosure sensor events from Kafka
+🗃️🔒️ #620 (events): encrypt visitor names and emails inside events
+🧱🔐 #620 (infra): issue the certificates that open visitor events
+🗃️🛂 #620 (events): let only certified staff read visitor events in the clear
+🗃️🧮 #621 (projections): project card trades into each visitor's collection
+🗃️🧮 #621 (projections): keep a ready-made table of today's feeding times
+🗃️➕ #622 (graph): add a graph database for animal family trees
+🧩⛓️ #623 (trade): model a card trade as a state machine shared by app and server
+🧩💾 #623 (app): keep trades made offline and send them when the phone reconnects
+# hard: 🎨 is tempting because it runs on the phone. The area is the side of the coin, not the device: this is capability, and the scope says where it runs.
+🧩🆕 #624 (ledger): add the trade ledger as a Rust module for the edge worker
+👷📱 #624 (ci): build the desktop app for arm64 and x64
+## Synthetic data from production
+🗃️🧮 #630 (synth): turn a sample of production visits into synthetic ones
+🗃️🛡️ #630 (synth): refuse any record that still holds a name or an email
+👷⛓️ #630 (ci): run the anonymiser after every release
+🗃️🎭 — (synth): refresh the synthetic visits from the November sample
+## Experience: cards, a 3D zoo, notifications
+🎨🆕 #640 (zoo-3d): add the walk-through polar enclosure
+🎨➕ #640 (app): add React Native Skia
+🎨💫 #640 (app): flip a card over when it is tapped
+🎨⚡️ #640 (zoo-3d): hold sixty frames a second on older Android phones
+🎨📱 #640 (zoo-3d): fall back to plain 3D where WebGPU is missing
+🎨✨ #640 (app): let visitors collect and trade animal cards
+🧩📤 #641 (notify): send a push when a favourite animal is about to be fed
+🎨💬 #641 (notify): word the feeding push as an invitation
+🧩👔🧪 #641 (notify): try sending the push ten minutes before feeding
+🧠🕹️ #642 (notebooks): add a page where product can type questions to the guide
+🎨🎭 #643 (storybook): add a story for a card with a very long animal name
+🎨🕹️ #643 (storybook): publish the component library on every merge
+## Checks of every kind
+🧩☑️ #650 (pricing): cover the VAT rule for every country we sell in
+🛰️☑️ #650 (payments): pin the payment provider's contract
+👷🆕 #650 (ci): start a production-like stack and a phone simulator for journeys
+🎨✅ #650 (journeys): a season-ticket holder buys a guest ticket on a phone
+🎨✅ #650 (journeys): a visitor trades a card while offline and sees it arrive later
+🎨☑️ #650 (app): compare every screen with its stored snapshot
+🎨📦️ #650 (app): refresh the snapshots after the new card frame
+🎨🐛 #650 (app): restore the card shadow lost in the list refactor
+🎨🕹️ #651 (rig): add a real laptop the pipeline drives through a KVM
+🤖📝 #651 (rig): tell agents how to drive the laptop
+🎨☑️ #651 (rig): check the desktop app installs and starts on the laptop
+🎨☑️ #651 (rig): check the camera prompt appears before the first scan
+🎨🥅 #651 (desktop): explain what to do after the camera was refused
+## Integrations, and a wrong tool
+🛰️🆕 #660 (payments): add the ticket payment provider
+🛰️👽️ #660 (payments): follow the provider's renamed refund field
+🧩➕ #661 (assistant): add Apache Flink for the guide's long tasks
+🧩💾 #661 (assistant): keep each conversation's progress in Flink
+🧩⛓️ #661 (assistant): resume a long task after a restart
+🧩🩹 #661 (assistant): restart a task when its Flink timer is dropped
+🧩🩹 #661 (assistant): store progress ourselves between Flink checkpoints
+🧩🥅 #661 (assistant): give up on a task after three restarts
+🧩🩹 #661 (assistant): patch the Flink client to keep long connections open
+# hard: No tag says wrong tool. The run does: ➕, then 💾 ⛓️ 🥅 and three 🩹 in one scope. That is the cue to ask whether something else already does this.
+🧩➕🧪 #662 (assistant): add Temporal
+🧩⛓️🧪 #662 (assistant): run long tasks as Temporal workflows
+🧩🏁 #662 (assistant): keep Temporal for long tasks
+🧩➖ #662 (assistant): remove Apache Flink
+🧩🔥 #662 (assistant): remove our own progress store
+## Keeping the repository small enough for an agent
+🧩🆕 #670 (cards): add a price formatter for card values
+🤖📊 #671 (audits): record November's sweep for duplicated logic
+🧩✂️ #671 (money): extract money handling into its own package
+🧩🪢 #671 (cards): use the money package for card values
+🤖📝 #671 (money): give the money package its own agent entry
+## A second language, a folding phone, design tokens
+🎨🌐 #690 (app): add German
+🎨⚙️ #690 (app): let people choose German or English
+🗃️⚙️ #690 (db): remember each person's language
+🎨📐 #691 (app): reflow the card grid across the fold of a folding phone
+🎨📱 #691 (app): keep the scan button within reach when the phone is open
+🎨🚸 #691 (app): carry a half-finished trade over when the phone is folded
+🎨💄 — (tokens): take the new hues and corner radii from Figma
+🎨🕹️ #693 (storybook): link each component to its Figma frame
+🎨☑️ #693 (storybook): flag components that drift from their Figma frame
+🎨✂️ #694 (hooks): share the card hooks between web and app
+🎨💫 #694 (app): flip cards with a native animation module
+🎨🍱 #695 (zoo-3d): update the polar bear model
+## Breaking changes and versions
+🧩🔊 #700 (api): count which app versions still call the api
+🧩🛡️ #700 (api): refuse app versions that cannot read the new card shape
+🎨🥅 #700 (app): ask people to update when their version is refused
+🗃️🏷️💥 #700 (db): split a card's owner into owner and holder
+🗃️🏁 #700 (db): finish the owner and holder migration
+🧩🏷️ #701 (api): version the partner feed as v2
+🧩📝💥 #701 (api): announce the end of the v1 partner feed
+🧩🔥💥 #701 (api): retire the v1 partner feed
+🧩🏁 #701 (api): close the move of partners to the v2 feed
+🧩🧹 #702 (assistant): delete helpers left over from the Flink client patch
+## Release, compliance, and a demo
+👷🔒️ #680 (ci): sign the provenance of every release build
+# hard: Compliance has no lens of its own. SLSA, encryption, certificates and access rules land on 🔒️ 🔐 🛂 📝. An issue label would gather them; a glyph would not.
+🧩📝 — (release): rebuild the changelog from the closed issues
+🎨📝 #680 (release): write the release notes for visitors
+🔖 release 2.4.0
+🧩📤 #681 (reports): copy the monthly report to the shared bucket
+🧱🚀 #682 (infra): promote 2.4.0 to production
+🧩⏪️ #682 (ledger): take back the ledger change that double-counted trades
+🎨🍱🚧 #683 (zoo-3d): put a baseball cap on the polar bear for the demo
+🧱🚀🚧 #683 (infra): ship the demo build to the conference phones
+🎨⚰️ #683 (zoo-3d): take the baseball cap off the polar bear
+
+### Story 3: error codes, from catalogue to translated description
+
+🧩🥅 #720 (errors): give every failure the api can return a stable error code
+🧩🥅 #720 (errors): add PAYMENT_DECLINED: the bank refused the card
+🧩🥅 #720 (api): return the error code with every failed request
+🧩🔊 #720 (api): report every error code to Sentry
+🎨➕ #720 (app): add a reader for PO message catalogues
+🎨🥅 #720 (app): show a meaningful description for each error code
+🎨🥅 #720 (app): show a general description when an error code is unknown
+🧩🪢 #720 (payments): use the catalogued codes in the payment handlers
+🧩☑️ #720 (errors): fail the build when an error carries an uncatalogued code
+🎨🌐 #720 (i18n): look up each description by its error code in a catalogue
+🎨🌐 #720 (i18n): add German error descriptions
+👷⛓️ #720 (ci): collect new descriptions into the template on every merge
+🎨🌐 — (i18n): refresh the message template
+🎨✅ #720 (journeys): a German-speaking visitor reads why a payment failed
+🎨💬 #721 (app): say what to do next in the payment-failed description
+🧩🌐 #722 (notify): send the feeding reminder in the visitor's language
+# hard: 🥅 or 🔌 for returning the code with a failed request. It changes what happens after a failure, so 🥅.
