@@ -322,6 +322,38 @@ pub fn check_message(
     message: &str,
     author: Option<&str>,
 ) -> Report {
+    check_with_source(vocab, config, message, author, MessageSource::Draft)
+}
+
+/// Validate a commit already stored by Git. Cleanup cannot remove lines from it.
+pub fn check_stored_message(
+    vocab: &Vocabulary,
+    config: &Config,
+    message: &str,
+    author: Option<&str>,
+) -> Report {
+    check_with_source(vocab, config, message, author, MessageSource::Stored)
+}
+
+#[derive(PartialEq)]
+enum MessageSource {
+    Draft,
+    Stored,
+}
+
+fn leading_issue_reference(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix('#')?;
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    (digits > 0).then(|| &line[..1 + digits])
+}
+
+fn check_with_source(
+    vocab: &Vocabulary,
+    config: &Config,
+    message: &str,
+    author: Option<&str>,
+    source: MessageSource,
+) -> Report {
     let lines: Vec<&str> = message.lines().collect();
     let parts = parts(config, &lines);
     let subject_line = parts.subject.map_or("", |at| lines[at]);
@@ -337,6 +369,19 @@ pub fn check_message(
     if let Ok(Subject::Skipped(reason)) = subject::parse(vocab, config, subject_line) {
         report.reading = Some(format!("not checked: {reason}"));
         return report;
+    }
+    // A reference can disappear during cleanup even if other prose survives.
+    // Inspect the draft before removing editor comments, up to the verbose diff.
+    if source == MessageSource::Draft
+        && let Some(at) = parts.subject
+        && let Some(ticket) = lines[at + 1..]
+            .iter()
+            .take_while(|line| !config.is_scissors(line))
+            .find_map(|line| leading_issue_reference(line))
+    {
+        report.errors.push(format!(
+            "a line starts with `{ticket}`. Git can discard it as a comment when the message is edited. Start with a word, for example `See {ticket} for the decision.`"
+        ));
     }
     if let Some(adopted) = config
         .vocabulary_version
@@ -695,13 +740,12 @@ mod tests {
         // was edited, even when it opens with a ticket, so it is never the description.
         let ticket_led = "🧩👔 #1 (server): allow an appeal\n\n#7 asked for the same window.\n";
         let report = check_with(strict, ticket_led, None);
-        assert_eq!(report.errors.len(), 1);
-        assert!(report.errors[0].contains("does not count"));
-        // Unless git is told to keep comments in every message.
+        assert!(report.errors.iter().any(|error| error.contains("See #7")));
+        // When Git already stored the line, history reads it as the author’s prose.
         let mut keeping = Config::standard().unwrap();
         keeping.keeps_comments = true;
         assert!(
-            check_message(&vocab, &keeping, ticket_led, None)
+            check_stored_message(&vocab, &keeping, ticket_led, None)
                 .errors
                 .is_empty()
         );

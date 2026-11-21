@@ -83,6 +83,48 @@ fn check_fix_should_write_the_file_it_was_given() {
 }
 
 #[test]
+fn reject_a_ticket_led_draft_and_preserve_the_stored_history() {
+    let repo = scratch("ticket-at-line-start");
+    git(&repo, &["init", "-q"]);
+    let subject = "🧩👔 #3 (server): allow an appeal";
+    let file = repo.join("draft");
+    let draft = format!("{subject}\n\nAnother reason.\n#42: keep the decision visible.\n");
+    std::fs::write(&file, &draft).unwrap();
+
+    for cleanup in ["strip", "verbatim"] {
+        git(&repo, &["config", "commit.cleanup", cleanup]);
+        for args in [vec!["check", "-m", &draft], vec!["check", "--fix", "draft"]] {
+            let result = gitmoji(&repo, &args);
+            assert!(!result.status.success());
+            assert!(text(&result).contains("See #42"), "{}", text(&result));
+        }
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains("#42: keep")
+        );
+    }
+
+    git(&repo, &["config", "core.commentChar", ";"]);
+    let result = gitmoji(&repo, &["check", "-m", &draft]);
+    assert!(!result.status.success() && text(&result).contains("See #42"));
+    git(&repo, &["config", "--unset", "core.commentChar"]);
+
+    git(&repo, &["commit", "--allow-empty", "-q", "-m", &draft]);
+    let history = gitmoji(&repo, &["history"]);
+    assert!(history.status.success(), "{}", text(&history));
+    git(&repo, &["config", "commit.cleanup", "strip"]);
+    let safe = format!(
+        "{subject}\n\nSee #42 for the decision.\n #42 is indented.\n# On branch main\n# ------------------------ >8 ------------------------\n#42 below scissors"
+    );
+    for message in [&safe, "Revert \"Allow an appeal\"\n\n#42 in generated text"] {
+        let result = gitmoji(&repo, &["check", "-m", message]);
+        assert!(result.status.success(), "{}", text(&result));
+    }
+    std::fs::remove_dir_all(repo).unwrap();
+}
+
+#[test]
 fn check_should_preserve_only_the_current_worktrees_pending_merge_message() {
     let folder = scratch("pending-merge");
     let repo = folder.join("repo");

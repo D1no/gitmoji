@@ -13,7 +13,7 @@ use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
 
-use gitmoji_triangle::check::{check_message, checked_against};
+use gitmoji_triangle::check::{check_stored_message, checked_against};
 use gitmoji_triangle::config::{Config, Level};
 use gitmoji_triangle::subject;
 use gitmoji_triangle::vocabulary::Vocabulary;
@@ -236,7 +236,7 @@ pub fn run(
             continue;
         }
         checked += 1;
-        let report = check_message(vocab, &config, &commit.message, Some(&commit.author));
+        let report = check_stored_message(vocab, &config, &commit.message, Some(&commit.author));
         if report.passed() {
             continue;
         }
