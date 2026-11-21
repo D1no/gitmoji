@@ -2,6 +2,12 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.14.0 (21 November 2026)
+
+- Show a pull request’s current commit intentions at the start of its title. The public workflow updates the prefix on pushes and title or base edits, including for fork PRs.
+- Select **Pull request title and description** as the merge default to land the same title with its PR number at the end. Projects with their own title updater can replace it with the [v0.14.0 workflow and setup guide](skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles).
+- `gitmoji merge-caption` now prints the open PR title. For scripts that need the landed commit subject, read `subject` from `--json`. The JSON also includes `title`, `recognized` and `total`. Direct merges and verified historical upgrades use the same format.
+
 ## 0.13.3 (21 November 2026)
 
 - The checker and commit hook now flag a description line that starts with an issue number, such as `#42`. Git can strip that line during an amend or reword. Start the line with a word, for example `See #42 for the decision.`

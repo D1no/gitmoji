@@ -1,4 +1,4 @@
-Gitmoji Triangle 0.13.3
+Gitmoji Triangle 0.14.0
 
   <area><behaviour or intent>[modifier] <ticket> (<scope>): <summary>
   🧩👔 #412 (server): allow an appeal within 30 days of refusal
