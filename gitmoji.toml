@@ -1,0 +1,25 @@
+# How this repository uses its own commit convention. `gitmoji guide` explains the rest.
+
+[ticket]
+# A ticket is an issue of this repository.
+patterns = ['#[0-9]+']
+example = "#123"
+
+[scope]
+# The part of the repository that owns the decision.
+allowed = ["repo", "package", "skills", "website", "docs", "ci"]
+
+[rules]
+signature = "warn"   # agents sign what went into a commit; a person's commit has no signature
+
+# Which files belong to which scope, for `gitmoji staged`.
+[paths]
+package = ["package/"]
+skills = ["skills/"]
+website = ["website/"]
+docs = ["docs/"]
+ci = [".github/"]
+
+# The Gitmoji release this repository has adopted. Change it with a 🔺 commit.
+[vocabulary]
+version = "0.13.0"

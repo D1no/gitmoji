@@ -1,0 +1,15 @@
+# Build output
+target/
+node_modules/
+dist/
+
+# Python helpers of the skill
+__pycache__/
+*.pyc
+
+# Local, per-checkout files
+.env
+.env.*
+!.env.schema
+*.local
+*.local.*
