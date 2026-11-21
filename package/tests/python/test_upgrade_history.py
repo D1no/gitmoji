@@ -82,28 +82,6 @@ class UpgradeHistory(unittest.TestCase):
                       apply=None, allow_unsigned=False, expect_candidate=None)
         return upgrade.make_candidate(SimpleNamespace(**(params | options)))
 
-    def test_legacy_versions_relabel_metadata_only_and_keep_tree(self):
-        msg = "🔺 gitmoji 2.0.0-draft.22: new format\n\nProse about 2.0.0-draft.21.\n\n△ `2.0.0-draft.21`\n"
-        self.git('commit', '--allow-empty', '-qm', msg)
-        old = self.git('rev-parse', 'HEAD')
-        with patch.object(upgrade, 'PullRequests', side_effect=AssertionError('offline migration')):
-            preview = self.execute(repo=None, base=self.merge)
-            result = self.execute(repo=None, base=self.merge, apply='versions',
-                                  expect_candidate=preview['candidate_tip'])
-        new = result['candidate_tip']
-        self.assertEqual(self.git('log', '-1', '--format=%B', new), msg.strip()
-                         .replace('gitmoji 2.0.0-draft.22', 'gitmoji `0.10.1`')
-                         .replace('△ `2.0.0-draft.21`', '△ `0.10.0`'))
-        self.assertEqual(self.git('rev-parse', new + '^{tree}'), self.git('rev-parse', old + '^{tree}'))
-        self.assertEqual(self.git('rev-parse', 'HEAD'), old)
-        self.assertEqual(self.execute(repo=None, ref=new, base=self.merge)['review_or_changed_commits'], [])
-
-    def test_legacy_versions_leave_ambiguous_stamps_for_review(self):
-        for body in ('△ `2.0.0-draft.99`', '△ `2.0.0-draft.22`\n\n△ `2.0.0-draft.23`',
-                     'Example:\n```\n△ `2.0.0-draft.24`\n```'):
-            with self.assertRaises(upgrade.ReviewNeeded):
-                upgrade.normalize_versions(('Title\n\n' + body).encode())
-
     def test_dry_run_then_candidate_preserve_graph_and_body(self):
         self.git('revert', '--no-edit', '-m', '1', self.merge)
         self.git('revert', '--no-edit', 'HEAD')

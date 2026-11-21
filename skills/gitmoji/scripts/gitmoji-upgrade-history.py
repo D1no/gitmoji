@@ -240,66 +240,6 @@ def proposal(oid, parents, message, prs):
     return None, None, None
 
 
-# These are the equivalent rule sets in the product release line. Several older
-# concept binaries also shipped draft.21; the stamp identifies rules, not a binary.
-DRAFT_RELEASES = {b'2.0.0-draft.21': b'0.10.0', b'2.0.0-draft.22': b'0.10.1',
-                  b'2.0.0-draft.23': b'0.11.0', b'2.0.0-draft.24': b'0.12.0'}
-STAMP = re.compile(r'(?m)^△ `([^`\r\n]+)`(?=\r?$)'.encode())
-ADOPTION = re.compile(r'^🔺 gitmoji (`?)(2\.0\.0-draft\.[0-9]+)\1:'.encode())
-
-
-def normalize_versions(message):
-    """Relabel adoption subjects and standalone convention stamps, leaving prose verbatim."""
-    subject, sep, body = message.partition(b'\n')
-    adoption = ADOPTION.match(subject)
-    stamps = list(STAMP.finditer(body))
-    draft_stamps = [m for m in stamps if m[1].startswith(b'2.0.0-draft.')]
-    if not adoption and not draft_stamps:
-        return message, None
-    if draft_stamps:
-        if len(stamps) != 1:
-            raise ReviewNeeded('multiple version lines; confirm which is the closing stamp')
-        stamp = draft_stamps[0]
-        # A closing stamp starts a paragraph. Fenced examples and quoted old messages
-        # followed by free prose cannot establish the version of the enclosing commit.
-        before = body[:stamp.start()].replace(b'\r\n', b'\n')
-        if before.rstrip(b'\n') and not before.endswith(b'\n\n'):
-            raise ReviewNeeded('version line is outside a closing paragraph')
-        after = body[stamp.end():].replace(b'\r\n', b'\n').strip()
-        if after:
-            paragraphs = re.split(rb'\n[ \t]*\n', after)
-            if (len(paragraphs[0].splitlines()) >= 2
-                    and re.search(rb' \([^()\n]+\)(?:, [^\n]+)?$', paragraphs[0].splitlines()[0])):
-                paragraphs = paragraphs[1:]
-            if any(not re.fullmatch(rb'(?:[A-Za-z0-9-]+: [^\n]+(?:\n|$))+', block)
-                   for block in paragraphs):
-                raise ReviewNeeded('unrecognized text follows the version stamp')
-    versions = [m for m in [adoption[2] if adoption else None,
-                             draft_stamps[0][1] if draft_stamps else None] if m]
-    if any(v not in DRAFT_RELEASES for v in versions):
-        raise ReviewNeeded('unknown draft; confirm its release before relabeling')
-    if adoption:
-        subject = '🔺 gitmoji `'.encode() + DRAFT_RELEASES[adoption[2]] + b'`:' + subject[adoption.end():]
-    if draft_stamps:
-        body = body[:stamp.start(1)] + DRAFT_RELEASES[stamp[1]] + body[stamp.end(1):]
-    evidence = ', '.join(dict.fromkeys((v + b' -> ' + DRAFT_RELEASES[v]).decode() for v in versions))
-    return subject + sep + body, evidence
-
-
-def caption_message(oid, parents, message, prs, remapped):
-    subject = message.split(b'\n', 1)[0]
-    new, reason, route = proposal(oid, parents, message, prs)
-    if new is None or new == subject:
-        return message, reason if new is None else None
-    provenance = b'Source commit: ' + oid.encode() + b'\n'
-    if route:
-        provenance += route + b'\n'
-    targets = REVERT_TARGET.findall(message)
-    if len(targets) == 1 and targets[0].decode() in remapped:
-        provenance += b'Candidate undo target: ' + remapped[targets[0].decode()].encode() + b'\n'
-    return new + b'\n\n' + provenance + b'\n' + message, reason
-
-
 def ensure_branch_available(candidate):
     # An unborn branch has no object ID. Its checked-out name still belongs to a worktree.
     worktrees = git('worktree', 'list', '--porcelain', '-z').split(b'\0')
@@ -337,7 +277,7 @@ def make_candidate(args):
             raise ValueError('candidate branch name cannot begin with a dash')
         ensure_branch_available(candidate)
     commits = git('rev-list', '--reverse', '--topo-order', *revisions).decode().splitlines()
-    prs = PullRequests(args.repo, args.hostname) if args.repo else None
+    prs = PullRequests(args.repo, args.hostname)
     remapped = {}
     changes = []
     signed = []
@@ -345,16 +285,21 @@ def make_candidate(args):
     for oid in commits:
         fields, parents, message = read_commit(oid)
         subject = message.split(b'\n', 1)[0]
-        original = message
         try:
-            if prs is None:
-                message, reason = normalize_versions(original)
-            else:
-                message, reason = caption_message(oid, parents, original, prs, remapped)
+            new, reason, route = proposal(oid, parents, message, prs)
         except ReviewNeeded as error:
-            reason = str(error)
-        if message == original and not any(p in remapped for p in parents):
-            if reason:
+            new, reason, route = None, str(error), None
+        if new is not None and new != subject:
+            # Keep the original subject and complete body, including conflict notes and trailers.
+            provenance = b'Source commit: ' + oid.encode() + b'\n'
+            if route:
+                provenance += route + b'\n'
+            targets = REVERT_TARGET.findall(message)
+            if len(targets) == 1 and targets[0].decode() in remapped:
+                provenance += b'Candidate undo target: ' + remapped[targets[0].decode()].encode() + b'\n'
+            message = new + b'\n\n' + provenance + b'\n' + message
+        elif not any(p in remapped for p in parents):
+            if new is None and reason:
                 changes.append({'old': oid, 'subject': subject.decode(errors='replace'), 'review': reason})
             continue
         rebuilt = []
@@ -366,7 +311,7 @@ def make_candidate(args):
                 continue
             if key == b'mergetag':
                 blocked.append(oid)
-            if key == b'encoding' and message != original:
+            if key == b'encoding' and new is not None and new != subject:
                 encoding = field[9:].strip().lower()
                 if encoding not in (b'utf-8', b'utf8'):
                     blocked.append(oid)
@@ -379,9 +324,9 @@ def make_candidate(args):
         result = git('hash-object', '-t', 'commit', *options, '--stdin', data=raw).decode().strip()
         remapped[oid] = result
         entry = {'old': oid, 'candidate': result, 'subject': subject.decode(errors='replace')}
-        if message != original:
-            entry.update(subject_new=message.split(b'\n', 1)[0].decode(errors='replace'), evidence=reason)
-        elif reason:
+        if new is not None and new != subject:
+            entry.update(subject_new=new.decode(), evidence=reason)
+        elif reason and new is None:
             entry['review'] = reason
         changes.append(entry)
     if candidate:
@@ -397,7 +342,7 @@ def make_candidate(args):
         new_tip = remapped[tip]
         ensure_branch_available(candidate)
         git('update-ref', '--no-deref', candidate, new_tip, '0' * len(tip))
-    return {'repository': args.hostname + '/' + args.repo if args.repo else None, 'source_tip': tip,
+    return {'repository': args.hostname + '/' + args.repo, 'source_tip': tip,
             'candidate_tip': remapped.get(tip, tip), 'created_branch': args.apply,
             'review_or_changed_commits': changes, 'invalidated_signatures': signed,
             'blocked_mergetags_or_encodings': blocked}
@@ -405,9 +350,7 @@ def make_candidate(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument('--normalize-versions', action='store_true', help='map legacy draft stamps to release numbers, offline')
-    mode.add_argument('--repo', metavar='OWNER/REPO', help='repository containing the merged PRs')
+    parser.add_argument('--repo', required=True, metavar='OWNER/REPO', help='repository containing the merged PRs')
     parser.add_argument('--hostname', default=os.environ.get('GH_HOST') or 'github.com')
     parser.add_argument('--ref', default='HEAD', help='source tip (default: HEAD)')
     parser.add_argument('--base', help='exclude this ancestor and its history')
@@ -418,7 +361,7 @@ def main():
     args = parser.parse_args()
     if args.expect_candidate and not args.apply:
         parser.error('--expect-candidate requires --apply')
-    if args.repo is not None and not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', args.repo):
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', args.repo):
         parser.error('--repo requires OWNER/REPO')
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
