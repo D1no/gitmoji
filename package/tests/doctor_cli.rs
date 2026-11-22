@@ -372,8 +372,8 @@ fn dependabot_reports_malformed_configuration_without_echoing_unrelated_fields()
     for (yaml, diagnostic) in [
         ("updates: [invalid-example-value", "line"),
         (
-            "updates: [{commit-message: {prefix-development: '🧩⬆ — (deps)'}}]",
-            ".prefix is required",
+            "updates: [{commit-message: {prefix-development: false}}]",
+            ".prefix-development must be a string",
         ),
         (
             "updates: [{commit-message: {prefix: false}}]",
@@ -441,5 +441,46 @@ updates:
         report["dependabot:prefixes"]
             .found
             .contains("updates[1].commit-message belongs in multi-ecosystem-groups")
+    );
+}
+
+#[test]
+fn dependabot_uses_the_preferred_file_and_warns_about_inactive_options() {
+    let project = Project::new();
+    project.init(false);
+    let github = project.root.join(".github");
+    fs::create_dir_all(&github).unwrap();
+    let preferred = github.join("dependabot.yml");
+    let fallback = github.join("dependabot.yaml");
+    let yaml = |options: &str| {
+        format!(
+            "version: 2\nupdates:\n - package-ecosystem: npm\n   directory: /\n   schedule: {{interval: weekly}}\n   commit-message: {{{options}}}\n"
+        )
+    };
+    fs::write(&fallback, yaml("prefix: unknown")).unwrap();
+    fs::write(&preferred, yaml("prefix: '🧩⬆ — (deps)'")).unwrap();
+    assert_eq!(
+        project.report(&github, 0)["dependabot:prefixes"].status,
+        "ok"
+    );
+    for options in ["include: scope", "prefix-development: '🧩⬆ — (deps-dev)'"] {
+        fs::write(&preferred, yaml(options)).unwrap();
+        let report = project.report(&github, 0);
+        let row = &report["dependabot:prefixes"];
+        assert_eq!(row.status, "not-enrolled");
+        assert!(
+            row.warnings
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|warning| warning.contains("infers its prefix from repository history"))
+        );
+    }
+    fs::remove_file(&preferred).unwrap();
+    let report = project.report(&github, 1);
+    assert!(
+        report["dependabot:prefixes"]
+            .found
+            .contains("dependabot.yaml updates[0]")
     );
 }
