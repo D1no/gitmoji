@@ -63,6 +63,14 @@ A PR appears under the first group that matches an authored area. The line shows
 
 The range selects merge commits. Gitmoji recognizes its PR captions and GitHub's default merge subjects. Local branch merges can carry PRs into a release. Each PR appears once, and a PR integrated inside another keeps its own tickets and breaking flags. When direct, squash or rebased work appears on the first-parent release history, stderr gives the count and lists each omitted commit’s abbreviated Git ID and subject, oldest first. Standalone release and adoption markers are excluded from the count. Review that history and add any changes readers need. When the draft is empty, stderr explains why and stdout stays empty. Release-marker commits (`🔖`) contribute no entry, and a PR containing only those markers is omitted. Review the draft before publishing to combine related work and describe the change for your readers.
 
+## Choosing policy for a commit
+
+The pre-commit check (`gitmoji staged`) and commit-msg check read the settings staged for that commit. After `gitmoji init`, stage the generated settings to apply them. A staged policy change applies immediately, including on the first commit. You can keep editing the working copy without changing what either hook checks.
+
+Both hooks look for `gitmoji.toml`, then `.config/gitmoji.toml`, then the legacy `triangle.toml` at the worktree root. A staged deletion exposes the next file in this order. If none is staged or already tracked in the proposed commit, the built-in defaults apply. Gitmoji follows tracked links to files inside the proposed tree. Linked worktrees and path-limited commits use the index Git selected for that commit.
+
+For a local experiment, `gitmoji --config path/to/policy.toml staged` uses that file from disk. Checking text with `gitmoji check -m` or checking a separate draft also uses the working copy so you can try a policy before staging it.
+
 ## Reviewing untagged commits during adoption
 
 The hook normally rejects a missing intention. To allow ordinary prose while a team
