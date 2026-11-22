@@ -1,6 +1,6 @@
 [package]
 name = "gitmoji-triangle"
-version = "0.17.0"
+version = "0.17.1"
 edition = "2024"
 publish = false
 description = "Checks and explains Gitmoji Triangle commit messages"

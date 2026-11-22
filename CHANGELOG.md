@@ -2,6 +2,10 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.17.1 (22 November 2026)
+
+- Refreshing Gitmoji’s unmodified 0.15.x and 0.16.0 title workflows no longer leaves a redundant `.before-update` file. Customized managed workflows still get a backup. Update the project pin and run `gitmoji init` to refresh the installed files. If 0.17.0 already created a backup, compare it with the version in Git before removing it.
+
 ## 0.17.0 (22 November 2026)
 
 - Read session signatures with `gitmoji signature`, keep PR titles in sync with `gitmoji pr-title`, and preview or submit direct merges with `gitmoji github-merge`. These operations run in the released executable. Local Git operations require Git. Hosted operations also require credentials for the selected GitHub host. [Pull request guide](skills/gitmoji/references/pull-requests.md)
