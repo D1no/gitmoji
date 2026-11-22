@@ -196,6 +196,60 @@ fn groups_the_authored_dependabot_upgrade_without_a_ticket() {
 }
 
 #[test]
+fn explains_missing_rows_without_putting_diagnostics_in_markdown() {
+    let project = Project::new();
+    let root = project.commit(&[], "Initialize the project");
+    let feature = project.commit(&[&root], "🧩✨ #21 (service): add reports");
+    let landed = project.commit(&[&root, &feature], "[`🧩✨`] Add reports (#22)");
+    let clean = project.changelog(&landed);
+    assert!(clean.status.success());
+    assert!(clean.stderr.is_empty());
+    let draft = String::from_utf8(clean.stdout).unwrap();
+
+    let direct = project.commit(&[&landed], "Update the help text");
+    let squash = project.commit(&[&direct], "Fix report totals (#23)");
+    let release = project.commit(&[&squash], "🔖 release 1.0.0");
+    let tip = project.commit(&[&release], "🔺 gitmoji `1.0.0`: adopt the release");
+    let mixed = project.changelog(&tip);
+    assert!(mixed.status.success());
+    assert_eq!(String::from_utf8(mixed.stdout).unwrap(), draft);
+    assert!(
+        String::from_utf8(mixed.stderr)
+            .unwrap()
+            .contains("2 single-parent commits")
+    );
+
+    let only_direct = project.changelog(&format!("{landed}..{tip}"));
+    assert!(only_direct.status.success());
+    assert!(only_direct.stdout.is_empty());
+    let diagnostic = String::from_utf8(only_direct.stderr).unwrap();
+    assert!(diagnostic.contains("no qualifying pull request"));
+    assert!(diagnostic.contains("2 single-parent commits"));
+
+    let equal = project.changelog(&format!("{tip}..{tip}"));
+    assert!(equal.status.success());
+    assert!(equal.stdout.is_empty());
+    assert!(
+        String::from_utf8(equal.stderr)
+            .unwrap()
+            .contains("same commit")
+    );
+    let reversed = project.changelog(&format!("{tip}..{root}"));
+    assert!(!reversed.status.success());
+    assert!(reversed.stdout.is_empty());
+    assert!(
+        String::from_utf8(reversed.stderr)
+            .unwrap()
+            .contains("reversed release range")
+    );
+
+    let sibling = project.commit(&[&root], "Unrelated change");
+    let diverged = project.changelog(&format!("{sibling}..{tip}"));
+    assert!(diverged.status.success());
+    assert_eq!(String::from_utf8(diverged.stdout).unwrap(), draft);
+}
+
+#[test]
 fn bad_ranges_and_invalid_audience_maps_fail_without_a_partial_draft() {
     let project = Project::new();
     let tip = project.commit(&[], "Root");

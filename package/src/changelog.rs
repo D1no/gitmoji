@@ -240,6 +240,43 @@ fn summarize(
     Some(Entry { group: rank, line })
 }
 
+/// A squash or rebase can have the same graph shape as a direct commit. Count
+/// the single-parent objects on the release line without guessing PR numbers.
+fn unlisted_first_parent(
+    span: &str,
+    claimed: &HashSet<String>,
+    vocab: &Vocabulary,
+) -> Result<usize> {
+    let log = git(&[
+        "log",
+        "--first-parent",
+        "--min-parents=1",
+        "--max-parents=1",
+        "--no-patch",
+        "--no-notes",
+        "--no-color",
+        "--no-show-signature",
+        "--encoding=UTF-8",
+        "-z",
+        "--format=%H%x00%s",
+        span,
+        "--",
+    ])?;
+    let mut fields = log.split_terminator('\0');
+    let mut count = 0;
+    while let Some(hash) = fields.next() {
+        let subject = fields
+            .next()
+            .context("missing first-parent commit subject")?;
+        let marker =
+            caption::heading(subject, vocab).is_some_and(|h| matches!(h.activity, "🔖" | "🔺"));
+        if !marker && !claimed.contains(hash) {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 /// Return a release-note draft in stable section order, oldest landings first.
 pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result<String> {
     let groups = config
@@ -248,6 +285,18 @@ pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result
         .unwrap_or_else(default_groups);
     let areas = area_groups(&groups, vocab)?;
     let (base, tip) = endpoints(range)?;
+    if base.as_ref() == Some(&tip) {
+        eprintln!("gitmoji changelog: empty range; both endpoints are the same commit.");
+        return Ok(String::new());
+    }
+    let span = base
+        .as_ref()
+        .map_or_else(|| tip.clone(), |base| format!("{base}..{tip}"));
+    // Every unequal TO contributes at least its tip unless FROM already reaches it.
+    if base.is_some() && git(&["rev-list", "-1", &span, "--"])?.trim().is_empty() {
+        bail!("reversed release range: TO is an ancestor of FROM; swap the endpoints");
+    }
+
     let log = git(&[
         "log",
         "--topo-order",
@@ -260,9 +309,7 @@ pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result
         "--encoding=UTF-8",
         "-z",
         "--format=%P%x00%s%x00%b",
-        &base
-            .as_ref()
-            .map_or(tip.clone(), |base| format!("{base}..{tip}")),
+        &span,
         "--",
     ])?;
     let mut sections = vec![Vec::new(); groups.len() + 1];
@@ -307,6 +354,16 @@ pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result
                 lines.join("\n")
             ));
         }
+    }
+    let omitted = unlisted_first_parent(&span, &claimed, vocab)?;
+    if markdown.is_empty() {
+        eprintln!("gitmoji changelog: no qualifying pull request landings in this range.");
+    }
+    if omitted > 0 {
+        let noun = if omitted == 1 { "commit" } else { "commits" };
+        eprintln!(
+            "gitmoji changelog: {omitted} single-parent {noun} on the first-parent history outside the draft. Review direct, squash and rebased changes for release notes."
+        );
     }
     Ok(markdown)
 }

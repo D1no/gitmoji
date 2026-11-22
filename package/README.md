@@ -37,7 +37,7 @@ cargo build --release --locked        # target/release/gitmoji
 
 ## Draft release notes
 
-Run `gitmoji changelog v1.0.0..v1.1.0` in a complete Git checkout. For a first release, `gitmoji changelog v1.0.0` includes history from the root through that tag. Branches and commit IDs work too. The command writes Markdown to standard output and leaves the working tree unchanged. An empty draft means the range contains no qualifying PRs.
+Run `gitmoji changelog v1.0.0..v1.1.0` in a complete Git checkout. For a first release, `gitmoji changelog v1.0.0` includes history from the root through that tag. Branches and commit IDs work too. The command writes Markdown to standard output and leaves the working tree unchanged. Equal endpoints produce an empty draft. If the end predates the start along the same ancestry, the command reports a reversed range and exits with an error. Diverged branches use ordinary Git two-dot semantics.
 
 For example, a PR changes the interface and its deployment. One of its commits marks a breaking change. The draft gives the release editor one line.
 
@@ -61,7 +61,7 @@ areas = ["🎨", "🧩"]
 
 A PR appears under the first group that matches an authored area. The line shows areas outside that group so an editor can split the story. PRs without a matching area appear under the reserved heading **Other changes**. The draft takes the PR number and human title from a recognized landing, then the tickets, areas and breaking flags from the arriving authored commits. It reads the complete headings even when the short PR inventory ends in an ellipsis. Tickets follow the project's configured patterns.
 
-The range selects merge commits. Gitmoji recognizes its PR captions and GitHub's default merge subjects. Local branch merges can carry PRs into a release. Each PR appears once, and a PR integrated inside another keeps its own tickets and breaking flags. Direct commits and squash or rebase histories lack the merge parents this draft uses. Release-marker commits (`🔖`) contribute no entry, and a PR containing only those markers is omitted. Review the draft before publishing to combine related work and describe the change for your readers.
+The range selects merge commits. Gitmoji recognizes its PR captions and GitHub's default merge subjects. Local branch merges can carry PRs into a release. Each PR appears once, and a PR integrated inside another keeps its own tickets and breaking flags. When direct, squash or rebased work appears on the first-parent release history, stderr reports the number of single-parent commits outside the draft. Standalone release and adoption markers are excluded from the count. Review that history and add any changes readers need. When the draft is empty, stderr explains why and stdout stays empty. Release-marker commits (`🔖`) contribute no entry, and a PR containing only those markers is omitted. Review the draft before publishing to combine related work and describe the change for your readers.
 
 ## Reviewing untagged commits during adoption
 
