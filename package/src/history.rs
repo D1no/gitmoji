@@ -502,24 +502,18 @@ mod tests {
     #[test]
     fn a_pr_reference_needs_a_landing_heading_or_provenance() {
         let vocab = Vocabulary::builtin().unwrap();
-        assert!(pr_landing("Undo the earlier choice (#42)", "", &vocab).is_none());
-        assert!(
-            pr_landing(
-                "Preview (#42)",
-                "Source: project:side\nBase: project:trunk",
-                &vocab
-            )
-            .is_some()
-        );
-        assert!(pr_landing("[`🧩✨`] Preview (#42)", "", &vocab).is_some());
-        assert!(
-            pr_landing(
-                "[`🧩✨`] side into trunk: Preview (#42)",
-                "Arrived from side (1):\n- abc Preview (#42)",
-                &vocab
-            )
-            .is_none()
-        );
+        assert!(!is_pr_merge("Undo the earlier choice (#42)", "", &vocab));
+        assert!(is_pr_merge(
+            "Preview (#42)",
+            "Source: project:side\nBase: project:trunk",
+            &vocab
+        ));
+        assert!(is_pr_merge("[`🧩✨`] Preview (#42)", "", &vocab));
+        assert!(!is_pr_merge(
+            "[`🧩✨`] side into trunk: Preview (#42)",
+            "Arrived from side (1):\n- abc Preview (#42)",
+            &vocab
+        ));
     }
 
     #[test]
