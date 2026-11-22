@@ -153,6 +153,25 @@ fn enclosing_pr_only_reports_its_own_decisions() {
 }
 
 #[test]
+fn nested_pr_cannot_reintroduce_a_change_shipped_at_the_lower_bound() {
+    let project = Project::new();
+    let root = project.commit(&[], "Root");
+    let shipped = project.commit(&[&root], "🎨✨💥 #80 (ui): remove the old control");
+    let previous_release = project.commit(&[&shipped], "🔖 release 1.0.0");
+    let planning = project.commit(&[&root], "Prepare delivery branch");
+    let new = project.commit(&[&shipped], "🧩✨ #81 (service): add a new endpoint");
+    let nested = project.commit(&[&planning, &new], "[`🎨` / `✨💥`] Add the endpoint (#82)");
+    let landing = project.commit(
+        &[&previous_release, &nested],
+        "Merge branch 'delivery' into trunk",
+    );
+    assert_eq!(
+        project.markdown(&format!("{previous_release}..{landing}")),
+        "## System\n\n- Add the endpoint (#82; #81)\n"
+    );
+}
+
+#[test]
 fn groups_the_authored_dependabot_upgrade_without_a_ticket() {
     let project = Project::new();
     let root = project.commit(&[], "Root");

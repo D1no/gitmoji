@@ -83,18 +83,13 @@ fn endpoints(range: &str) -> Result<(Option<String>, String)> {
     Ok((base.map(resolve).transpose()?, resolve(tip)?))
 }
 
-/// For an inner PR this is its own arrival. For an outer PR, its arrival may
-/// include earlier PRs; the local integration commits themselves add no row.
-fn authored(
-    parents: &str,
-    claimed: &mut HashSet<String>,
-    vocab: &Vocabulary,
-) -> Result<Vec<String>> {
+fn arriving_log(parents: &str, base: Option<&str>, format: &str) -> Result<String> {
     let mut parents = parents.split_ascii_whitespace();
     let target = parents
         .next()
         .context("missing first parent of a PR merge")?;
     let excluded_target = format!("^{target}");
+    let excluded_base = base.map(|id| format!("^{id}"));
     let mut args = vec![
         "log",
         "--topo-order",
@@ -106,12 +101,36 @@ fn authored(
         "--no-show-signature",
         "--encoding=UTF-8",
         "-z",
-        "--format=%H%x00%an <%ae>%x00%s",
+        format,
         &excluded_target,
     ];
+    args.extend(excluded_base.as_deref());
     args.extend(parents);
     args.push("--");
-    let log = git(&args)?;
+    git(&args)
+}
+
+/// Exclude decisions shipped before this release and decisions already
+/// attributed to a nested PR in the draft.
+fn authored(
+    parents: &str,
+    base: Option<&str>,
+    claimed: &mut HashSet<String>,
+    vocab: &Vocabulary,
+) -> Result<Option<Vec<String>>> {
+    let log = arriving_log(parents, base, "--format=%H%x00%an <%ae>%x00%s")?;
+    if log.is_empty() && base.is_some() {
+        // The earlier tag can point at the PR's own head. The landing still
+        // belongs to this range, but a release-only landing must stay omitted.
+        let original = arriving_log(parents, None, "--format=%s")?;
+        if !original.is_empty()
+            && original
+                .split_terminator('\0')
+                .all(|s| caption::heading(s, vocab).is_some_and(|h| h.activity == "🔖"))
+        {
+            return Ok(None);
+        }
+    }
     let mut fields = log.split_terminator('\0');
     let mut subjects = Vec::new();
     while let Some(hash) = fields.next() {
@@ -123,7 +142,7 @@ fn authored(
             subjects.push(dependabot_message(vocab, author, subject).into_owned());
         }
     }
-    Ok(subjects)
+    Ok(Some(subjects))
 }
 
 // A PR title on GitHub is plain text. Keep links, images and HTML in that
@@ -257,8 +276,9 @@ pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result
             continue;
         };
         if seen.insert(number)
+            && let Some(subjects) = authored(parents, base.as_deref(), &mut claimed, vocab)?
             && let Some(entry) = summarize(
-                &authored(parents, &mut claimed, vocab)?,
+                &subjects,
                 number,
                 title,
                 &areas,
