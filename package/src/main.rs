@@ -19,6 +19,7 @@ mod hosting;
 mod init;
 mod local_merge;
 mod signature;
+mod upgrade;
 
 #[derive(Parser)]
 #[command(
@@ -79,7 +80,13 @@ enum Action {
     History {
         /// The commits to check, as git names a range: `main..HEAD`. Without it, every
         /// commit.
+        #[arg(conflicts_with = "upgrade")]
         range: Option<String>,
+        /// Preview or apply a candidate history, or update verified hosted titles.
+        #[arg(long, conflicts_with = "unmigrated")]
+        upgrade: bool,
+        #[command(flatten)]
+        options: upgrade::Options,
         /// Check only the commits that do not say they were checked against the version
         /// this command speaks: those from an earlier version, and those without the line.
         #[arg(long)]
@@ -280,6 +287,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
     let vocab = Vocabulary::builtin()?;
+    if let Action::History {
+        upgrade: true,
+        ref options,
+        ..
+    } = cli.command
+    {
+        upgrade::run(options, &vocab)?;
+        return Ok(ExitCode::SUCCESS);
+    }
     if let Action::Init {
         path,
         tickets,
@@ -495,9 +511,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         | Action::GithubMerge(_)
         | Action::Init { .. }
         | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
-        Action::History { range, unmigrated } => {
-            history::run(&vocab, config, range.as_deref(), unmigrated)
-        }
+        Action::History {
+            range, unmigrated, ..
+        } => history::run(&vocab, config, range.as_deref(), unmigrated),
         Action::MergeCaption {
             json,
             pr,

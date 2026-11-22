@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use anyhow::{Context, Result};
 use regex::Regex;
 
-use crate::history::{git, incoming_commits};
+use crate::history::{git, incoming_commits_with};
 use gitmoji_triangle::{caption, vocabulary::Vocabulary};
 
 const BODY_LIMIT: usize = 20;
@@ -243,8 +243,14 @@ impl Arrival<'_> {
 
 /// Inventory walks all newly reachable authored commits. The human narrative
 /// follows just the arriving first-parent lines, once across all incoming tips.
-fn render(direction: &Direction, base: &str, heads: &[&str], vocab: &Vocabulary) -> Result<String> {
-    let incoming = incoming_commits(base, heads)?;
+fn render(
+    direction: &Direction,
+    base: &str,
+    heads: &[&str],
+    vocab: &Vocabulary,
+    git: fn(&[&str]) -> Result<String>,
+) -> Result<String> {
+    let incoming = incoming_commits_with(base, heads, git)?;
     let excluded = format!("^{base}");
     let mut args = vec![
         "log",
@@ -394,7 +400,7 @@ pub(super) fn prepare(file: &Path, vocab: &Vocabulary) -> Result<()> {
         flow.sources = format!("'{}'", flow.sources);
     }
     let base = git(&["rev-parse", "--verify", "HEAD"])?;
-    let mut rewritten = render(&flow, base.trim(), &heads, vocab)?;
+    let mut rewritten = render(&flow, base.trim(), &heads, vocab, git)?;
     if rewritten.lines().any(|line| line.starts_with(comment)) {
         eprintln!(
             "gitmoji: Git's comment prefix would remove part of the branch caption; keeping the original merge message"
@@ -426,6 +432,14 @@ pub(super) fn prepare(file: &Path, vocab: &Vocabulary) -> Result<()> {
 /// A historical object has no current branch. Only its recorded default subject
 /// can supply direction. The caller owns preservation of its original message.
 pub(super) fn historical(revision: &str, vocab: &Vocabulary) -> Result<Option<String>> {
+    historical_with(revision, vocab, git)
+}
+
+pub(super) fn historical_with(
+    revision: &str,
+    vocab: &Vocabulary,
+    git: fn(&[&str]) -> Result<String>,
+) -> Result<Option<String>> {
     let revision = git(&[
         "rev-parse",
         "--verify",
@@ -454,5 +468,5 @@ pub(super) fn historical(revision: &str, vocab: &Vocabulary) -> Result<Option<St
     let Some(flow) = direction(subject.trim_end_matches('\n'), None, heads.len()) else {
         return Ok(None);
     };
-    Ok(Some(render(&flow, base, heads, vocab)?))
+    Ok(Some(render(&flow, base, heads, vocab, git)?))
 }
