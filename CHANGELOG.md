@@ -2,6 +2,14 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.17.0 (22 November 2026)
+
+- Read session signatures with `gitmoji signature`, keep PR titles in sync with `gitmoji pr-title`, and preview or submit direct merges with `gitmoji github-merge`. These operations run in the released executable. Local Git operations require Git. Hosted operations also require credentials for the selected GitHub host. [Pull request guide](skills/gitmoji/references/pull-requests.md)
+- Use `gitmoji history --upgrade` for historical merge and revert captions. The offline mode runs using only Git and Gitmoji. The preview, candidate checks and explicit apply options are preserved. [History upgrade guide](skills/gitmoji/references/upgrade-history.md)
+- `gitmoji pin` reads the adopted version from the project settings. The pinned installer bootstraps a checksum-verified reader on fresh machines. The release installer and shipped commands run without Python or uv.
+- To upgrade, install 0.17.0, update `[vocabulary].version`, and run `gitmoji init`. Commit the refreshed skill and managed workflows. Replace direct calls to the old Python helpers with the commands above. Init removes recognized released copies and preserves local customizations.
+- Setup suggestions attribute imported skill and workflow files to the release with a `Source:` line and show separate staging commands for local configuration changes.
+
 ## 0.16.0 (22 November 2026)
 
 - Local branch merges show the source, destination and intentions of incoming commits, including in projects with no remote or pull requests. Their bodies list what arrived and any conflicted paths Git recorded. Local merges and PRs that introduce a merge use up to fourteen visible symbols. Ordinary PRs keep nine. [Examples and signatures](skills/gitmoji/references/pull-requests.md#local-branch-merges)
