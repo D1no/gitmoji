@@ -1,6 +1,6 @@
 [package]
 name = "gitmoji-triangle"
-version = "0.17.1"
+version = "0.18.0"
 edition = "2024"
 publish = false
 description = "Checks and explains Gitmoji Triangle commit messages"
@@ -31,6 +31,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 toml = "0.8"
+serde_yaml_ng = "0.10"
 
 [lints.rust]
 missing_docs = "warn"

@@ -14,6 +14,7 @@ use gitmoji_triangle::guide;
 use gitmoji_triangle::staged::Staged;
 use gitmoji_triangle::vocabulary::Vocabulary;
 
+mod doctor;
 mod history;
 mod hosting;
 mod init;
@@ -38,6 +39,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Action {
+    /// Check the installation in this working tree without changing it.
+    Doctor {
+        /// Print an array of component results for scripts.
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the release pinned in the project configuration.
     Pin,
     /// Print a commit signature from the active agent session.
@@ -183,15 +190,18 @@ fn settings_path(path: Option<&Path>) -> Result<Option<PathBuf>> {
 /// Read the project's adopted version even if its other settings belong to another release.
 fn pinned_release(path: Option<&Path>) -> Result<String> {
     let file = settings_path(path)?.context("No Gitmoji settings found in the project")?;
-    let source = std::fs::read_to_string(&file)
-        .with_context(|| format!("cannot read {}", file.display()))?;
+    read_release_pin(&file)?.context("Cannot read [vocabulary].version from project settings")
+}
+
+fn read_release_pin(file: &Path) -> Result<Option<String>> {
+    let source =
+        std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
     let settings = source
         .parse::<toml::Table>()
         .with_context(|| format!("Cannot read [vocabulary].version from {}", file.display()))?;
-    let value = settings
-        .get("vocabulary")
-        .and_then(|v| v.get("version"))
-        .context("Cannot read [vocabulary].version from project settings")?;
+    let Some(value) = settings.get("vocabulary").and_then(|v| v.get("version")) else {
+        return Ok(None);
+    };
     let valid = |part: &str| {
         !part.is_empty()
             && part.bytes().all(|n| n.is_ascii_digit())
@@ -206,7 +216,7 @@ fn pinned_release(path: Option<&Path>) -> Result<String> {
                 file.display()
             )
         })?;
-    Ok(version.to_owned())
+    Ok(Some(version.to_owned()))
 }
 
 fn load_config(path: Option<&Path>) -> Result<Config> {
@@ -308,6 +318,9 @@ fn staged_files() -> Result<Vec<String>> {
 }
 
 fn run(cli: Cli) -> Result<ExitCode> {
+    if let Action::Doctor { json } = cli.command {
+        return doctor::run(cli.config.as_deref(), json);
+    }
     if let Action::Pin = cli.command {
         println!("{}", pinned_release(cli.config.as_deref())?);
         return Ok(ExitCode::SUCCESS);
@@ -540,7 +553,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Action::Pin
+        Action::Doctor { .. }
+        | Action::Pin
         | Action::Signature { .. }
         | Action::PrTitle(_)
         | Action::GithubMerge(_)
