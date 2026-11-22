@@ -146,13 +146,20 @@ impl IncomingCommits {
         vocab: &Vocabulary,
     ) -> Result<caption::Caption> {
         let original = caption::without_inventory(title, vocab);
-        let title = self
-            .dependabot_subjects
-            .iter()
-            .map(|&index| &self.subjects[index])
-            .find(|candidate| candidate.as_str() == original)
-            .and_then(|subject| subject.split_once("): "))
-            .map_or(title, |(_, summary)| summary);
+        // Dependabot can shorten its stored commit subject while retaining versions and paths in the PR title.
+        let title = original
+            .split_once("): ")
+            .and_then(|(heading, summary)| {
+                self.dependabot_subjects
+                    .iter()
+                    .any(|&index| {
+                        self.subjects[index]
+                            .split_once("): ")
+                            .is_some_and(|(bot, _)| bot == heading)
+                    })
+                    .then_some(summary)
+            })
+            .unwrap_or(title);
         caption::summarize_pr(number, title, &self.subjects, self.contains_merge, vocab)
             .map_err(anyhow::Error::msg)
     }
