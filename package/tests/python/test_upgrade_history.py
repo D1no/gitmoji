@@ -1,27 +1,113 @@
-"""Run with python3 -m unittest discover -s package/tests/python."""
+"""Exercise native history upgrades against Git objects and a local GitHub Enterprise fixture."""
 
-import importlib.util
-import io
+from http.server import BaseHTTPRequestHandler
 import json
 import os
-import shutil
 from pathlib import Path
+import re
+import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from types import SimpleNamespace
+
+from hosted_tls import LocalTlsFixture
 
 
-SCRIPT = Path(__file__).resolve().parents[3] / 'skills/gitmoji/scripts/gitmoji-upgrade-history.py'
-spec = importlib.util.spec_from_file_location('gitmoji_upgrade', SCRIPT)
-upgrade = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(upgrade)
+BINARY = (Path(__file__).resolve().parents[2] / 'target/debug' /
+          ('gitmoji.exe' if os.name == 'nt' else 'gitmoji'))
+REPOSITORY = 'sample/repo'
+
+
+def git_bytes(*args, data=None):
+    return subprocess.check_output(['git', *args], input=data)
+
+
+def commit_message(oid):
+    return git_bytes('cat-file', 'commit', oid).split(b'\n\n', 1)[1]
+
+
+class HistoryHost(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def request_json(self):
+        return json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+
+    def send_json(self, value):
+        data = json.dumps(value).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_POST(self):
+        if self.path != '/api/graphql':
+            return self.send_error(404)
+        request = self.request_json()
+        query, variables = request['query'], request['variables']
+        if (variables.get('owner'), variables.get('name')) != ('sample', 'repo'):
+            return self.send_error(404)
+        fixture = self.server.fixture
+        fixture.requests.append(('POST', self.path))
+
+        def connection(nodes):
+            # Use two pages for multi-PR fixtures to exercise real cursor transport.
+            offset = int(variables.get('endCursor', 0))
+            following = offset + 1
+            return {'nodes': nodes[offset:following], 'pageInfo': {
+                'hasNextPage': following < len(nodes), 'endCursor': str(following)}}
+
+        if 'associatedPullRequests' in query:
+            associations = [{'number': pr['number'], 'repository': {'nameWithOwner': REPOSITORY}}
+                            for pr in fixture.prs]
+            repo = {'object': {'associatedPullRequests': connection(associations)}}
+        elif 'commits(' in query:
+            commits = [{'commit': {'oid': oid}} for oid in fixture.members.get(variables['number'], [])]
+            repo = {'pullRequest': {'commits': connection(commits)}}
+        elif 'pullRequests(' in query:
+            repo = {'nameWithOwner': REPOSITORY, 'pullRequests': connection(fixture.prs)}
+        else:
+            return self.send_error(400, 'Unexpected history query')
+        self.send_json({'data': {'repository': repo}})
+
+    def pull(self):
+        match = re.fullmatch(r'/api/v3/repos/sample/repo/pulls/([0-9]+)', self.path)
+        if match:
+            self.server.fixture.requests.append((self.command, self.path))
+            return next((p for p in self.server.fixture.prs if p['number'] == int(match[1])), None)
+        return None
+
+    def do_GET(self):
+        pr = self.pull()
+        if pr is None:
+            return self.send_error(404)
+        number = pr['number']
+        record = {'number': number, 'title': pr['title'], 'state': 'closed', 'merged_at': '2024-10-01',
+                  'merge_commit_sha': pr['mergeCommit']['oid'], 'base': {'repo': {'full_name': REPOSITORY}}}
+        record.update(self.server.fixture.live_overrides.get(number, {}))
+        self.send_json(record)
+
+    def do_PATCH(self):
+        pr = self.pull()
+        if pr is None:
+            return self.send_error(404)
+        title = self.request_json()['title']
+        self.server.fixture.patches.append((pr['number'], title))
+        pr['title'] = title
+        self.send_json({'number': pr['number'], 'title': title})
 
 
 class UpgradeHistory(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        fixture = LocalTlsFixture(HistoryHost)
+        cls.addClassCleanup(fixture.close)
+        cls.host, cls.ca = fixture.server, fixture.ca_crt
+
     def setUp(self):
+        self.enterContext(patch.dict(os.environ, {'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull}))
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         old = os.getcwd()
@@ -49,58 +135,25 @@ class UpgradeHistory(unittest.TestCase):
         self.members = {7: [self.member]}
         self.patches = []
         self.live_overrides = {}
-        command = upgrade.run
-
-        def fake_run(*args, data=None):
-            if args[0] == 'gh':
-                if 'graphql' not in args:
-                    self.assertEqual(args[args.index('--hostname') + 1], 'git.example.com')
-                    path = next(arg for arg in args if arg.startswith('repos/'))
-                    self.assertRegex(path, r'^repos/sample/repo/pulls/[0-9]+$')
-                    number = int(path.rsplit('/', 1)[1])
-                    pr = next(pr for pr in self.prs if pr['number'] == number)
-                    record = {'number': number, 'title': pr['title'], 'state': 'closed',
-                              'merged_at': '2024-10-01', 'merge_commit_sha': pr['mergeCommit']['oid'],
-                              'base': {'repo': {'full_name': 'sample/repo'}}}
-                    record.update(self.live_overrides.get(number, {}))
-                    if '--method' in args:
-                        self.assertEqual(args[args.index('--method') + 1], 'PATCH')
-                        title = args[args.index('-f') + 1].removeprefix('title=')
-                        record['title'] = pr['title'] = title
-                        self.patches.append((number, title))
-                    return json.dumps(record).encode()
-                query = args[args.index('graphql') + 4]
-                self.assertEqual(args[args.index('--hostname') + 1], 'git.example.com')
-                if query == 'query=' + upgrade.QUERY:
-                    page = {'nameWithOwner': 'sample/repo', 'pullRequests': {'nodes': self.prs}}
-                elif query == 'query=' + upgrade.ASSOCIATIONS:
-                    page = {'object': {'associatedPullRequests': {'nodes': [
-                        {'number': pr['number'], 'repository': {'nameWithOwner': 'sample/repo'}}
-                        for pr in self.prs]}}}
-                elif query == 'query=' + upgrade.MEMBERSHIP:
-                    number = int(next(arg[7:] for arg in args if arg.startswith('number=')))
-                    page = {'pullRequest': {'commits': {'nodes': [
-                        {'commit': {'oid': oid}} for oid in self.members.get(number, [])]}}}
-                else:
-                    self.fail(query)
-                return json.dumps([{'data': {'repository': page}}]).encode()
-            if args[0] == 'gitmoji':
-                # CI builds the real command before these tests. Only hosted PR metadata is simulated.
-                binary = SCRIPT.parents[3] / 'package/target/debug' / ('gitmoji.exe' if os.name == 'nt' else 'gitmoji')
-                return command(str(binary) if binary.is_file() else 'gitmoji', *args[1:], data=data)
-            return command(*args, data=data)
-        mock = patch.object(upgrade, 'run', side_effect=fake_run)
-        mock.start()
-        self.addCleanup(mock.stop)
+        self.requests = []
+        self.host.fixture = self
 
     def git(self, *args):
         return subprocess.check_output(['git', *args], stderr=subprocess.DEVNULL).decode().strip()
 
     def execute(self, **options):
-        params = dict(repo='sample/repo', hostname='git.example.com', ref='HEAD', base=None,
-                      apply=None, allow_unsigned=False, expect_candidate=None,
-                      update_pr_titles=False, apply_pr_titles=None)
-        return upgrade.make_candidate(SimpleNamespace(**(params | options)))
+        hostname = f'localhost:{self.host.server_port}'
+        command = [BINARY, 'history', '--upgrade', '--repo', REPOSITORY, '--hostname', hostname]
+        for key, value in options.items():
+            command.append('--' + key.replace('_', '-'))
+            if value is not True:
+                command.append(str(value))
+        env = {**os.environ, 'GH_ENTERPRISE_TOKEN': 'local-fixture',
+               'SSL_CERT_FILE': str(self.ca), 'NO_PROXY': 'localhost', 'no_proxy': 'localhost'}
+        result = subprocess.run(command, env=env, capture_output=True)
+        if result.returncode:
+            raise ValueError(result.stderr.decode())
+        return json.loads(result.stdout)
 
     def test_dry_run_then_candidate_preserve_graph_and_body(self):
         self.git('revert', '--no-edit', '-m', '1', self.merge)
@@ -221,7 +274,7 @@ class UpgradeHistory(unittest.TestCase):
         self.git('commit', '--allow-empty', '-qm', 'prepare integration')
         self.git('merge', '--no-ff', '--no-commit', 'main')
         path = Path(self.git('rev-parse', '--git-path', 'MERGE_MSG'))
-        upgrade.run('gitmoji', 'merge-message', str(path), 'merge')
+        subprocess.run([BINARY, 'merge-message', str(path), 'merge'], check=True)
         original = path.read_bytes().rstrip(b'\n')
         old_sha = self.git('rev-parse', '--short', self.merge).encode()
         old_row = b'- ' + old_sha + b' Merge pull request #7 from fork/topic'
@@ -234,10 +287,10 @@ class UpgradeHistory(unittest.TestCase):
         custom_header = header.split(b': ', 1)[0] + b': bring the reviewed preview into the release'
         path.write_bytes(custom_header + b'\n\n' + inventory + b'\n\nConflicted paths:\n- preview.txt' + notes)
         self.git('commit', '--cleanup=verbatim', '-q', '-F', str(path))
-        before = upgrade.read_commit(self.git('rev-parse', 'HEAD'))[2]
+        before = commit_message(self.git('rev-parse', 'HEAD'))
         preview = self.execute()
         self.execute(apply='candidate', expect_candidate=preview['candidate_tip'])
-        after = upgrade.read_commit(self.git('rev-parse', 'candidate'))[2]
+        after = commit_message(self.git('rev-parse', 'candidate'))
         new_row = b'- ' + self.git('show', '-s', '--format=%H %s', 'candidate^2').encode()
         self.assertEqual(after, before.replace(old_row, new_row, 1))
         self.assertTrue(after.endswith(notes))
@@ -260,7 +313,7 @@ class UpgradeHistory(unittest.TestCase):
         self.git('commit', '--allow-empty', '-qm', 'start assembly')
         self.git('merge', '--no-ff', '--no-commit', 'integration')
         path = self.git('rev-parse', '--git-path', 'MERGE_MSG')
-        upgrade.run('gitmoji', 'merge-message', path, 'merge')
+        subprocess.run([BINARY, 'merge-message', path, 'merge'], check=True)
         self.git('commit', '--cleanup=verbatim', '-q', '-F', path)
         assembled = self.git('rev-parse', 'HEAD')
         self.git('switch', '-q', 'main')
@@ -274,9 +327,7 @@ class UpgradeHistory(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tool_dir)
         git_path = Path(shutil.which('git'))
         binary_name = 'gitmoji.exe' if os.name == 'nt' else 'gitmoji'
-        gitmoji = SCRIPT.parents[3] / 'package/target/debug' / binary_name
-        if not gitmoji.exists():
-            gitmoji = Path(shutil.which(binary_name))
+        gitmoji = BINARY
         if os.name == 'nt':
             # Git for Windows finds its runtime relative to its installation.
             tool_path = os.pathsep.join([str(git_path.parent), str(gitmoji.parent)])
@@ -286,11 +337,12 @@ class UpgradeHistory(unittest.TestCase):
             tool_path = str(tool_dir)
         env = {**os.environ, 'PATH': tool_path, 'GH_HOST': 'unreachable.invalid',
                'GIT_EXEC_PATH': self.git('--exec-path')}
-        self.assertIsNone(shutil.which('gh', path=env['PATH']))
+        for tool in ('gh', 'python3', 'python'):
+            self.assertIsNone(shutil.which(tool, path=env['PATH']))
 
         def offline(*args):
             return json.loads(subprocess.check_output(
-                [sys.executable, str(SCRIPT), '--local-merges-only', *args], env=env))
+                [BINARY, 'history', '--upgrade', '--local-merges-only', *args], env=env))
 
         preview = offline()
         self.assertIsNone(preview['repository'])
@@ -309,7 +361,7 @@ class UpgradeHistory(unittest.TestCase):
         self.assertTrue(edits[assembled]['inventory_updated'])
         self.assertIn('- ' + edits[local]['candidate'] + ' ' + edits[local]['subject_new'],
                       self.git('show', '-s', '--format=%B', edits[assembled]['candidate']).splitlines())
-        self.assertEqual(upgrade.read_commit(tip)[2], upgrade.read_commit(applied['candidate_tip'])[2])
+        self.assertEqual(commit_message(tip), commit_message(applied['candidate_tip']))
         again = offline('--ref', 'offline-candidate')
         self.assertEqual(again['candidate_tip'], again['source_tip'])
         self.assertFalse(again['review_or_changed_commits'])
@@ -318,7 +370,7 @@ class UpgradeHistory(unittest.TestCase):
         for hosted in (['--repo', 'sample/repo'], ['--hostname', 'example.org'],
                        ['--update-pr-titles'], ['--apply-pr-titles', 'unused.json']):
             with self.subTest(hosted=hosted):
-                result = subprocess.run([sys.executable, str(SCRIPT), '--local-merges-only', *hosted],
+                result = subprocess.run([BINARY, 'history', '--upgrade', '--local-merges-only', *hosted],
                                         capture_output=True)
                 self.assertEqual(result.returncode, 2)
                 self.assertIn(hosted[0].encode(), result.stderr)
@@ -398,16 +450,17 @@ class UpgradeHistory(unittest.TestCase):
     def rewrite_fixture(self, change_tree=(), change_author=()):
         """Rewrite the entire reachable DAG in order, preserving the original objects."""
         remapped = {}
-        blob = upgrade.git('hash-object', '-w', '--stdin', data=b'shared content').strip()
+        blob = git_bytes('hash-object', '-w', '--stdin', data=b'shared content').strip()
         for old in self.git('rev-list', '--reverse', '--topo-order', self.merge).splitlines():
-            fields, _, message = upgrade.read_commit(old)
+            header, message = git_bytes('cat-file', 'commit', old).split(b'\n\n', 1)
+            fields = header.split(b'\n')
             rewritten = []
             for field in fields:
                 if field.startswith(b'parent '):
                     field = b'parent ' + remapped[field[7:].decode()].encode()
                 elif field.startswith(b'tree ') and old in change_tree:
-                    entries = upgrade.git('ls-tree', '-z', field[5:].decode())
-                    tree = upgrade.git('mktree', '-z', data=entries + b'100644 blob ' + blob + b'\tshared\0')
+                    entries = git_bytes('ls-tree', '-z', field[5:].decode())
+                    tree = git_bytes('mktree', '-z', data=entries + b'100644 blob ' + blob + b'\tshared\0')
                     field = b'tree ' + tree.strip()
                 elif field.startswith(b'author ') and old in change_author:
                     field = field.replace(b'Contributor <', b'Another Contributor <')
@@ -415,7 +468,7 @@ class UpgradeHistory(unittest.TestCase):
             if old == self.merge:
                 message = 'Merge #7 [`🎨✨`] Show preview\n'.encode()
             raw = b'\n'.join(rewritten) + b'\n\n' + message + b'\nRewritten description.\n'
-            remapped[old] = upgrade.git('hash-object', '-w', '-t', 'commit', '--stdin', data=raw).decode().strip()
+            remapped[old] = git_bytes('hash-object', '-w', '-t', 'commit', '--stdin', data=raw).decode().strip()
             self.assertNotEqual(old, remapped[old])
         self.assertEqual(self.git('rev-list', '--parents', '-1', remapped[self.merge]).split()[1:],
                          [remapped[self.root], remapped[self.member]])
@@ -700,10 +753,10 @@ class UpgradeHistory(unittest.TestCase):
 
     def test_target_legacy_encoding_and_one_parent_landing(self):
         self.git('switch', '-q', 'topic')
-        raw = upgrade.git('cat-file', 'commit', self.member)
+        raw = git_bytes('cat-file', 'commit', self.member)
         header = raw.split(b'\n\n', 1)[0]
         changed = header + b'\nencoding ISO-8859-1\n\nR\xe9parer le r\xe9sum\xe9\n'
-        target = upgrade.git('hash-object', '-w', '-t', 'commit', '--stdin', data=changed).decode().strip()
+        target = git_bytes('hash-object', '-w', '-t', 'commit', '--stdin', data=changed).decode().strip()
         self.git('reset', '--hard', target)
         self.pr['mergeCommit']['oid'] = target
         self.git('revert', '--no-edit', target)
@@ -715,10 +768,10 @@ class UpgradeHistory(unittest.TestCase):
 
     def test_invalid_target_subject_is_reported_without_replacement_characters(self):
         self.git('switch', '-q', 'topic')
-        header = upgrade.git('cat-file', 'commit', self.member).split(b'\n\n', 1)[0]
+        header = git_bytes('cat-file', 'commit', self.member).split(b'\n\n', 1)[0]
         for original in (b'', b'invalid \xff'):
             with self.subTest(original=original):
-                target = upgrade.git('hash-object', '-w', '-t', 'commit', '--stdin',
+                target = git_bytes('hash-object', '-w', '-t', 'commit', '--stdin',
                                      data=header + b'\n\n' + original).decode().strip()
                 self.git('reset', '-q', '--hard', target)
                 self.members[7] = [target]
@@ -732,11 +785,11 @@ class UpgradeHistory(unittest.TestCase):
         self.git('worktree', 'add', '-q', '--detach', 'linked', self.merge)
         self.git('-C', 'linked', 'switch', '--orphan', 'occupied')
         before = self.git('-C', 'linked', 'status', '--porcelain=v1', '-b')
-        with patch.object(upgrade, 'PullRequests', side_effect=AssertionError('preflight must run first')):
-            with self.assertRaisesRegex(ValueError, 'worktree'):
-                self.execute(apply='occupied')
-            with self.assertRaisesRegex(ValueError, 'already exists'):
-                self.execute(apply='topic')
+        with self.assertRaisesRegex(ValueError, 'worktree'):
+            self.execute(apply='occupied')
+        with self.assertRaisesRegex(ValueError, 'already exists'):
+            self.execute(apply='topic')
+        self.assertFalse(self.requests, 'reserved ref names must fail before querying GitHub')
         self.assertEqual(self.git('-C', 'linked', 'status', '--porcelain=v1', '-b'), before)
         self.git('symbolic-ref', 'refs/heads/alias', 'refs/heads/missing')
         with self.assertRaisesRegex(ValueError, 'symbolic ref'):
@@ -746,15 +799,8 @@ class UpgradeHistory(unittest.TestCase):
 
     def test_json_on_ascii_output_survives_branch_creation(self):
         self.pr['title'] = 'Résumé'
-        buf = io.BytesIO()
-        with io.TextIOWrapper(buf, encoding='ascii') as stream, patch.object(sys, 'stdout', stream), \
-                patch.dict(os.environ), \
-                patch.object(sys, 'argv', ['upgrade', '--repo', 'sample/repo', '--hostname',
-                                           'git.example.com', '--apply', 'ascii-report']):
-            upgrade.main()
-            stream.flush()
-            self.assertIn('Résumé'.encode(), buf.getvalue())
-            report = json.loads(buf.getvalue())
+        with patch.dict(os.environ, {'LANG': 'C', 'LC_ALL': 'C'}):
+            report = self.execute(apply='ascii-report')
         self.assertEqual(self.git('rev-parse', 'ascii-report'), report['candidate_tip'])
         self.assertEqual(report['review_or_changed_commits'][-1]['subject_new'], '[`🎨✨`] Résumé (#7)')
 
@@ -765,9 +811,9 @@ class UpgradeHistory(unittest.TestCase):
         self.assertNotIn('candidate', entry)
 
     def test_signature_and_descendants(self):
-        base = upgrade.git('cat-file', 'commit', self.merge)
+        base = git_bytes('cat-file', 'commit', self.merge)
         signed = base.replace(b'\n\n', b'\ngpgsig placeholder\n signed-data\n\n', 1)
-        oid = upgrade.git('hash-object', '-w', '-t', 'commit', '--stdin', data=signed).decode().strip()
+        oid = git_bytes('hash-object', '-w', '-t', 'commit', '--stdin', data=signed).decode().strip()
         self.pr['mergeCommit']['oid'] = oid
         report = self.execute(ref=oid)
         self.assertEqual(report['invalidated_signatures'], [oid])
@@ -775,8 +821,8 @@ class UpgradeHistory(unittest.TestCase):
             self.execute(ref=oid, apply='signed-candidate')
         self.assertNotIn('signed-candidate', self.git('show-ref'))
         candidate = self.execute(ref=oid, apply='unsigned-candidate', allow_unsigned=True)
-        self.assertNotIn(b'gpgsig ', upgrade.git('cat-file', 'commit', candidate['candidate_tip']))
-        self.assertIn(b'gpgsig ', upgrade.git('cat-file', 'commit', oid))
+        self.assertNotIn(b'gpgsig ', git_bytes('cat-file', 'commit', candidate['candidate_tip']))
+        self.assertIn(b'gpgsig ', git_bytes('cat-file', 'commit', oid))
 
 
 if __name__ == '__main__':
