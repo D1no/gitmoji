@@ -277,9 +277,14 @@ class UpgradeHistory(unittest.TestCase):
         gitmoji = SCRIPT.parents[3] / 'package/target/debug' / binary_name
         if not gitmoji.exists():
             gitmoji = Path(shutil.which(binary_name))
-        (tool_dir / git_path.name).symlink_to(git_path)
-        (tool_dir / binary_name).symlink_to(gitmoji)
-        env = {**os.environ, 'PATH': str(tool_dir), 'GH_HOST': 'unreachable.invalid',
+        if os.name == 'nt':
+            # Git for Windows finds its runtime relative to its installation.
+            tool_path = os.pathsep.join([str(git_path.parent), str(gitmoji.parent)])
+        else:
+            (tool_dir / git_path.name).symlink_to(git_path)
+            (tool_dir / binary_name).symlink_to(gitmoji)
+            tool_path = str(tool_dir)
+        env = {**os.environ, 'PATH': tool_path, 'GH_HOST': 'unreachable.invalid',
                'GIT_EXEC_PATH': self.git('--exec-path')}
         self.assertIsNone(shutil.which('gh', path=env['PATH']))
 
