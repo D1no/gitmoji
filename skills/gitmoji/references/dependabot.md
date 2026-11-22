@@ -29,6 +29,6 @@ A grouped update has one heading when the bot groups its changes in one commit:
 [`🧑‍💻⬆️`] Bump the number-helpers group across 1 directory with 2 updates
 ```
 
-Use `git show -s --format=%s HEAD` on the bot branch to inspect the stored subject. To search subjects in an existing history, `git log --format=%s | grep -E '⬆|:arrow_up:'` finds both Unicode spellings and older shortcode subjects.
+Use `git show -s --format=%s HEAD` on the bot branch to inspect the stored subject. Run `gitmoji log '⬆'` to find upgrade headings in both Unicode spellings and recorded Dependabot shortcode headings. Add a revision range such as `trunk..HEAD` to limit the search.
 
 The [managed workflows](pull-requests.md#enable-automatic-pr-titles) validate the original signed commit and keep the full PR description, including version numbers or a directory that Dependabot shortened in the commit. From a full clone, `gitmoji history BASE..HEAD` checks the stored messages. `gitmoji merge-caption --pr NUMBER --json --title 'PR title' BASE HEAD` shows the recognized count and the generated title. A single bot commit should report `"recognized":1` and `"total":1`.

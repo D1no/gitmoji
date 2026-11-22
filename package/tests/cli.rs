@@ -513,6 +513,113 @@ fn stored_dependabot_upgrades_pass_checks_and_get_one_caption() {
 }
 
 #[test]
+fn log_finds_each_authored_slot_and_preserves_the_original_subjects() {
+    let repo = tempfile::tempdir().unwrap();
+    let here = repo.path();
+    git(here, &["init", "-q", "-b", "main"]);
+    let empty = gitmoji(here, &["log", "⬆"]);
+    assert!(empty.status.success() && empty.stdout.is_empty());
+    assert!(!gitmoji(here, &["log", "⬆", "missing"]).status.success());
+    for bad in ["nonsense", "🧩⬆️"] {
+        assert!(!gitmoji(here, &["log", bad]).status.success());
+    }
+
+    let commit = |subject: &str| git(here, &["commit", "--allow-empty", "-qm", subject]);
+    commit("🔖 release 1.0");
+    git(here, &["tag", "base"]);
+    commit("🛰⬆💥  #1 (api): retain ⬆ and :arrow_up: in text");
+    commit("👷⬆️ — (actions): update action");
+    git(here, &["checkout", "-qb", "bot"]);
+    let stored = ":artificial_satellite::arrow_up: — (deps): update client";
+    git(
+        here,
+        &[
+            "commit",
+            "--allow-empty",
+            "--author",
+            "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+            "-qm",
+            stored,
+        ],
+    );
+    git(here, &["checkout", "-q", "main"]);
+    // A merge may even have an authored-looking subject. It is still an integration.
+    git(
+        here,
+        &[
+            "merge",
+            "--no-ff",
+            "bot",
+            "-qm",
+            "🛰⬆ — (deps): combine work",
+        ],
+    );
+    commit(stored);
+    commit("🛰🛡 #1 (api): mention an ⬆ in the summary");
+
+    let subjects = |filter: &str, range: &str| {
+        let done = gitmoji(here, &["log", filter, range]);
+        assert!(done.status.success(), "{}", text(&done));
+        assert!(done.stderr.is_empty());
+        String::from_utf8(done.stdout)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                let (hash, subject) = line.split_once(' ').unwrap();
+                assert_eq!(hash.len(), 9);
+                subject.to_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = [
+        "🛰️⬆️ — (deps): update client",
+        "👷⬆️ — (actions): update action",
+        "🛰️⬆️💥  #1 (api): retain ⬆ and :arrow_up: in text",
+    ];
+    for filter in ["⬆", "⬆️", ":arrow_up:"] {
+        assert_eq!(subjects(filter, "base..HEAD"), expected);
+    }
+    assert_eq!(subjects("💥", "HEAD"), [expected[2]]);
+    assert_eq!(subjects("🛰", "bot^..bot"), [expected[0]]);
+    assert_eq!(subjects("🔖", "HEAD"), ["🔖 release 1.0"]);
+    assert!(subjects("🔖", "base..HEAD").is_empty());
+
+    commit("🛰⬆ NO-TICKET (api): retain the ⬆ in prose");
+    let failing = gitmoji(here, &["history", "HEAD^..HEAD"]);
+    assert!(!failing.status.success());
+    assert!(text(&failing).contains("🛰️⬆️ NO-TICKET (api): retain the ⬆ in prose"));
+
+    let raw = Command::new("git")
+        .args(["show", "-s", "--format=format:%s", "bot"])
+        .current_dir(here)
+        .output()
+        .unwrap();
+    assert_eq!(raw.stdout, stored.as_bytes());
+}
+
+#[test]
+fn staged_groups_presentation_variants_and_counts_each_file_once() {
+    let repo = tempfile::tempdir().unwrap();
+    let here = repo.path();
+    git(here, &["init", "-q"]);
+    std::fs::write(
+        here.join("gitmoji.toml"),
+        "[hints]\n'api/' = '🛰'\n'*.rs' = '🛰️'\n",
+    )
+    .unwrap();
+    std::fs::create_dir(here.join("api")).unwrap();
+    for file in ["api/client.rs", "lib.rs"] {
+        std::fs::write(here.join(file), "").unwrap();
+    }
+    git(here, &["add", "api", "lib.rs"]);
+    let done = gitmoji(here, &["staged"]);
+    assert!(done.status.success(), "{}", text(&done));
+    let result = text(&done);
+    assert!(result.contains("🛰️ (2)"), "{result}");
+    assert!(!result.contains("More than one area"), "{result}");
+}
+
+#[test]
 fn merge_caption_reads_the_changes_arriving_on_the_actual_target() {
     let repo = scratch("caption-arriving");
     git(&repo, &["init", "-q", "-b", "main"]);
