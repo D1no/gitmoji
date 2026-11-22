@@ -2,6 +2,14 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.20.0 (22 November 2026)
+
+- The pre-commit and commit-msg hooks now read the settings Git will commit. An unstaged policy edit cannot change the outcome of either hook. When adopting Gitmoji for the first time, stage the new settings to use them in that commit. Standalone message checks and an explicit `--config` still read from disk. [Staged project settings](package/README.md#choosing-policy-for-a-commit)
+- Find authored changes with `gitmoji log '⬆' trunk..HEAD`. The filter searches any slot in a heading and shows canonical emoji, including on older Dependabot upgrade commits that store `:arrow_up:`. The original signed objects keep their spelling. [Find commits by emoji](package/README.md#find-commits-by-emoji)
+- `gitmoji doctor` checks explicit Dependabot prefixes, including development and multi-ecosystem group prefixes. When a project has both configuration files, Dependabot and Gitmoji read `.github/dependabot.yml` first. Omitting the main prefix lets Dependabot infer its style from history. A supported bot rewrite appears in the optional `warnings` array and keeps the row healthy. An explicit prefix such as `chore` that produces an invalid Gitmoji heading now returns a mismatch and exit 1. Projects without a Dependabot file keep the existing component list. [Dependabot setup and manual check](skills/gitmoji/references/dependabot.md#check-a-prefix-before-enabling-it)
+- `gitmoji changelog` prints the abbreviated ID and subject of each unlisted single-parent commit on the first-parent release line. The existing count stays on stderr, followed by the individual commits. Markdown on stdout keeps its existing format. [Draft release notes](package/README.md#draft-release-notes)
+- To upgrade, set `[vocabulary].version` to `"0.20.0"`, run the standalone installer with `--pinned`, then run `gitmoji init` and `gitmoji doctor` from the project. The filter and diagnostics require no additional runtime or configuration.
+
 ## 0.19.1 (22 November 2026)
 
 - Use a bare Unicode upgrade arrow in Dependabot prefixes, for example `🧑‍💻⬆ — (deps)`, to keep the arrow visible in raw Git history. Gitmoji accepts the bare arrow, its emoji-presentation form and earlier bot shortcodes. The generated PR inventory uses `⬆️`. [Dependabot setup](skills/gitmoji/references/dependabot.md)
