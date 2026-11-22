@@ -19,6 +19,7 @@ struct Component {
     expected: String,
     remedy: String,
     install: Option<String>,
+    warnings: Option<Vec<String>>,
 }
 
 struct Project {
@@ -243,4 +244,202 @@ fn a_missing_or_invalid_pin_still_yields_a_component_report() {
     let output = project.cli(&config, &["doctor"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8(output.stdout).unwrap().contains("pin"));
+}
+
+#[test]
+fn dependabot_prefixes_distinguish_upstream_substitutions_from_invalid_headings() {
+    let project = Project::new();
+    project.init(false);
+    assert!(
+        !project
+            .report(&project.root, 0)
+            .contains_key("dependabot:prefixes")
+    );
+    let github = project.root.join(".github");
+    fs::create_dir_all(&github).unwrap();
+    let file = github.join("dependabot.yaml");
+    fs::write(&file, "version: 2\nupdates: [{package-ecosystem: cargo}]\n").unwrap();
+    let report = project.report(&project.root, 0);
+    assert_eq!(report["dependabot:prefixes"].status, "not-enrolled");
+    let yaml = r#"version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    commit-message:
+      prefix: "🧑‍💻⬆ — (deps)" # bare Unicode arrow
+      prefix-development: "🧑‍💻⬆️ — (deps-dev)"
+  - package-ecosystem: cargo
+    directory: /
+    schedule: { interval: weekly }
+    commit-message: {prefix: '🧩⬆ — (deps)'}
+"#;
+    fs::write(&file, yaml).unwrap();
+    let before = snapshot(&github);
+    let report = project.report(&github, 0);
+    let row = &report["dependabot:prefixes"];
+    assert_eq!(row.status, "ok");
+    let warnings = row.warnings.as_ref().unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains("updates[0].commit-message.prefix-development"));
+    assert!(warnings[0].contains(":arrow_up:"));
+    let plain = project.cli(&github, &["doctor"]);
+    assert!(
+        String::from_utf8(plain.stdout)
+            .unwrap()
+            .contains("Warning:")
+    );
+    assert_eq!(snapshot(&github), before);
+
+    let invalid = yaml
+        .replace("🧩⬆ — (deps)", "🧩🔒 — (deps)")
+        .replace("🧑‍💻⬆ — (deps)", "🎉 — (deps)");
+    fs::write(&file, invalid).unwrap();
+    let report = project.report(&github, 1);
+    let row = &report["dependabot:prefixes"];
+    assert_eq!(row.status, "mismatch");
+    assert!(row.found.contains("updates[0].commit-message.prefix:"));
+    assert!(
+        row.found
+            .contains("updates[1].commit-message.prefix: the stored shortcode")
+    );
+    assert!(
+        row.warnings
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|w| w.contains(":lock:"))
+    );
+}
+
+#[test]
+fn dependabot_include_uses_the_project_scope_and_ticket_rules() {
+    let project = Project::new();
+    project.init(false);
+    let github = project.root.join(".github");
+    fs::create_dir_all(&github).unwrap();
+    let file = github.join("dependabot.yml");
+    let settings = project.root.join("gitmoji.toml");
+    let rules = format!(
+        "[vocabulary]\nversion = '{}'\n[ticket]\npatterns = ['TASK-[0-9]+']\n[scope]\nallowed = ['deps', 'deps-dev']\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    fs::write(&settings, &rules).unwrap();
+    let yaml = r#"version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    commit-message: {prefix: '🧩⬆ TASK-42 ', include: scope}
+"#;
+    fs::write(&file, yaml).unwrap();
+    let report = project.report(&github, 0);
+    assert_eq!(report["dependabot:prefixes"].status, "ok");
+    assert!(report["dependabot:prefixes"].warnings.is_none());
+    fs::write(&settings, rules.replace(", 'deps-dev'", "")).unwrap();
+    let report = project.report(&github, 1);
+    assert!(report["dependabot:prefixes"].found.contains("deps-dev"));
+    fs::write(
+        &file,
+        yaml.replace("ecosystem: npm", "ecosystem: github-actions"),
+    )
+    .unwrap();
+    assert_eq!(
+        project.report(&github, 0)["dependabot:prefixes"].status,
+        "ok"
+    );
+    fs::write(&file, yaml.replace("TASK-42 ", "#42 ")).unwrap();
+    let report = project.report(&github, 1);
+    assert!(report["dependabot:prefixes"].found.contains("ticket"));
+    for prefix in ["— (deps)", "— (deps):"] {
+        fs::write(&file, yaml.replace("TASK-42 ", prefix)).unwrap();
+        let report = project.report(&github, 1);
+        assert!(
+            report["dependabot:prefixes"]
+                .found
+                .contains("already supplies a scope")
+        );
+    }
+}
+
+#[test]
+fn dependabot_reports_malformed_configuration_without_echoing_unrelated_fields() {
+    let project = Project::new();
+    project.init(false);
+    let github = project.root.join(".github");
+    fs::create_dir_all(&github).unwrap();
+    let file = github.join("dependabot.yml");
+    for (yaml, diagnostic) in [
+        ("updates: [invalid-example-value", "line"),
+        (
+            "updates: [{commit-message: {prefix-development: '🧩⬆ — (deps)'}}]",
+            ".prefix is required",
+        ),
+        (
+            "updates: [{commit-message: {prefix: false}}]",
+            ".prefix must be a string",
+        ),
+        (
+            "updates: [{commit-message: {prefix: '🧩⬆ — (deps)', include: 42}}]",
+            ".include must be scope",
+        ),
+        (
+            "updates: [{commit-message: {prefix: '🔖 release'}}]",
+            "authored change",
+        ),
+    ] {
+        fs::write(&file, yaml).unwrap();
+        let report = project.report(&github, 1);
+        let row = &report["dependabot:prefixes"];
+        assert_eq!(row.status, "mismatch", "{yaml}");
+        assert!(row.found.contains(diagnostic), "{row:?}");
+        assert!(!row.found.contains("invalid-example-value"));
+    }
+}
+
+#[test]
+fn dependabot_checks_group_prefixes_and_their_actual_update_entries() {
+    let project = Project::new();
+    project.init(false);
+    let github = project.root.join(".github");
+    fs::create_dir_all(&github).unwrap();
+    let file = github.join("dependabot.yml");
+    let yaml = r#"version: 2
+multi-ecosystem-groups:
+  sdk:
+    schedule: { interval: weekly }
+    commit-message: {prefix: "🧩⬆ — (deps)"}
+updates:
+  - package-ecosystem: npm
+    directory: /
+    patterns: ['*']
+    multi-ecosystem-group: sdk
+  - package-ecosystem: pip
+    directory: /
+    patterns: ['*']
+    multi-ecosystem-group: sdk
+"#;
+    fs::write(&file, yaml).unwrap();
+    assert_eq!(
+        project.report(&github, 0)["dependabot:prefixes"].status,
+        "ok"
+    );
+    fs::write(&file, yaml.replace("🧩⬆ — (deps)", "unknown")).unwrap();
+    let report = project.report(&github, 1);
+    assert!(
+        report["dependabot:prefixes"]
+            .found
+            .contains("multi-ecosystem-groups[\"sdk\"].commit-message.prefix")
+    );
+    fs::write(
+        &file,
+        format!("{yaml}    commit-message: {{prefix: '🧩⬆ — (deps)'}}\n"),
+    )
+    .unwrap();
+    let report = project.report(&github, 1);
+    assert!(
+        report["dependabot:prefixes"]
+            .found
+            .contains("updates[1].commit-message belongs in multi-ecosystem-groups")
+    );
 }

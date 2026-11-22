@@ -93,13 +93,16 @@ pub(crate) fn git(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+pub(crate) const DEPENDABOT_AUTHOR: &str =
+    "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>";
+
 /// GitHub can store shortcodes in Dependabot's commit while keeping Unicode in its PR title.
 fn dependabot_upgrade<'a>(
     vocab: &Vocabulary,
     author: &str,
     message: &'a str,
 ) -> Option<Cow<'a, str>> {
-    if author != "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>" {
+    if author != DEPENDABOT_AUTHOR {
         return None;
     }
     let (heading, tail) = message.split_once(" — (")?;
