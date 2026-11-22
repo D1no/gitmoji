@@ -811,3 +811,46 @@ fn checking_a_merge_caption_as_text_asks_for_the_stored_commit() {
     }
     std::fs::remove_dir_all(repo).unwrap();
 }
+
+#[test]
+fn pr_title_explains_the_actions_context_and_local_preview() {
+    let binary = env!("CARGO_BIN_EXE_gitmoji");
+    let help = Command::new(binary)
+        .args(["pr-title", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    let help = String::from_utf8(help.stdout).unwrap();
+    for name in [
+        "GITHUB_SERVER_URL",
+        "GITHUB_API_URL",
+        "GITHUB_REPOSITORY",
+        "GITMOJI_TITLE_TOKEN",
+    ] {
+        assert!(help.contains(name), "{help}");
+    }
+    for value in [None, Some(""), Some("   ")] {
+        let mut cmd = Command::new(binary);
+        cmd.args(["pr-title", "--pr", "42"])
+            .env_remove("GITHUB_SERVER_URL");
+        if let Some(value) = value {
+            cmd.env("GITHUB_SERVER_URL", value);
+        }
+        let result = cmd.output().unwrap();
+        assert!(!result.status.success());
+        let diagnostic = String::from_utf8(result.stderr).unwrap();
+        assert!(
+            diagnostic.contains("GITHUB_SERVER_URL is missing or empty"),
+            "{diagnostic}"
+        );
+        for message in [&help, &diagnostic] {
+            assert!(message.contains("updates the title on GitHub"));
+            assert!(message.contains("read-only preview"));
+            assert!(
+                message.contains(
+                    "gitmoji github-merge --repo OWNER/REPO --pr NUMBER [--hostname HOST]"
+                )
+            );
+        }
+    }
+}

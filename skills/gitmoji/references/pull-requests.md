@@ -30,6 +30,8 @@ A PR starts with the reviewer’s title. Gitmoji adds the areas and intentions o
 
 The workflow uses the current base, head and human title when the PR opens, reopens, receives a push, or is edited (including a base change). It fetches commit objects from the base repository and runs the formatter from the trusted Gitmoji release. It skips an already-correct title. A human edit made at the same instant as the final title update can race with it. GitHub’s title API has no expected-title parameter. A subsequent edit or push runs the sync again. [GitHub PR API](https://docs.github.com/en/rest/pulls/pulls#update-a-pull-request)
 
+The managed workflow runs `gitmoji pr-title --pr NUMBER`, which updates the title on GitHub. Actions supplies `GITHUB_SERVER_URL`, `GITHUB_API_URL` and `GITHUB_REPOSITORY`. The workflow passes its job token as `GITMOJI_TITLE_TOKEN`, with `contents: read` and `pull-requests: write`. To preview an open PR from a full local clone, run `gitmoji github-merge --repo OWNER/REPO --pr NUMBER` and add `--hostname HOST` for an enterprise host. This invocation is read-only.
+
 ## Read or preview a caption
 
 ```text

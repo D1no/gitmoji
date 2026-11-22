@@ -11,7 +11,13 @@ use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use super::{Client, valid_pr};
 use crate::history::incoming_commits_with;
 
+const TITLE_HELP: &str = "pr-title updates the title on GitHub. The managed Actions workflow supplies \
+    GITHUB_SERVER_URL, GITHUB_API_URL, GITHUB_REPOSITORY and GITMOJI_TITLE_TOKEN.\n\n\
+    For a read-only preview from a full local clone, run:\n  \
+    gitmoji github-merge --repo OWNER/REPO --pr NUMBER [--hostname HOST]";
+
 #[derive(Args)]
+#[command(after_long_help = TITLE_HELP)]
 pub(crate) struct TitleArgs {
     /// Number of the open PR in GITHUB_REPOSITORY.
     #[arg(long)]
@@ -214,7 +220,12 @@ fn synchronize(
 /// Update one open PR's title, using only trusted Actions context.
 pub(crate) fn sync_title(args: TitleArgs) -> Result<()> {
     valid_pr(args.pr)?;
-    let setting = |key| std::env::var(key).with_context(|| format!("missing {key}"));
+    let setting = |key| {
+        std::env::var(key)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .with_context(|| format!("{key} is missing or empty. {TITLE_HELP}"))
+    };
     let client = Client::with_token(
         &setting("GITHUB_SERVER_URL")?,
         &setting("GITHUB_API_URL")?,
