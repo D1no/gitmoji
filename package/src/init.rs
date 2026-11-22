@@ -1119,6 +1119,27 @@ fn create_workflow_file(path: &Path, content: &str) -> Result<bool> {
 }
 
 fn backup_workflow(top: &Path, name: &str, old: &str) -> Result<bool> {
+    // These released PR-title templates used the Python helper. They differ from
+    // the native template even when the project has never edited the workflow.
+    const RELEASED: &[(&str, &str)] = &[
+        (
+            ".github/workflows/pr-title.yml",
+            "9b453f5dd6a6ef6bb788b6b8f1a005da78def680be1e0e9bbe3df476dba98676",
+        ), // 0.15.0
+        (
+            ".github/workflows/gitmoji-pr-title.yml",
+            "5d1151655fe981b30615b916cc2bb1162bbac6395b737ecc5a06dc57804ec171",
+        ), // 0.15.1
+        (
+            ".github/workflows/gitmoji-pr-title.yml",
+            "a660fa96ddce35e12dca9da60622798b25761a0619dd7dbf760fa6f9bd81c7a8",
+        ), // 0.16.0
+    ];
+    let digest = format!("{:x}", Sha256::digest(old.replace("\r\n", "\n").as_bytes()));
+    if RELEASED.contains(&(name, digest.as_str())) {
+        return Ok(true);
+    }
+
     let backup = format!("{name}.before-update");
     let path = top.join(&backup);
     if !staged(top, &backup)? {
@@ -1931,6 +1952,60 @@ Work it out once, then add a script here so the next agent does not have to.
         write_workflows(&top, &paths, false, &mut changed).unwrap();
         assert!(changed.is_empty());
         std::fs::remove_dir_all(top).unwrap();
+    }
+
+    #[test]
+    fn release_upgrade_backs_up_only_edits_to_the_previous_title_workflow() {
+        let previous = include_str!("../tests/fixtures/pr-title-0.16.yml");
+        let title = &WORKFLOWS[0];
+        for (version, path, customized) in [
+            ("0.15.0", title.legacy_path, false),
+            ("0.15.1", title.path, false),
+            ("0.16.0", title.path, false),
+            ("0.16.0", title.path, true),
+        ] {
+            let top = scratch(&format!("release-backup-{version}-{customized}"));
+            git(&top, &["init", "-q"]).unwrap();
+            write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.17.1'").unwrap();
+            let mut old = pin_workflow(previous, version);
+            if path == title.legacy_path {
+                old = old.replace("\n  gitmoji-pr-title:\n", "\n  title:\n");
+            }
+            if customized {
+                old.push_str("# project change\n");
+            }
+            let old = old.replace('\n', "\r\n");
+            write(&top.join(path), &old).unwrap();
+            git(&top, &["add", "."]).unwrap();
+            git(
+                &top,
+                &[
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "-qm",
+                    "earlier release",
+                ],
+            )
+            .unwrap();
+            let paths = SkillPaths::new(&top).unwrap();
+            let mut changed = Vec::new();
+            write_workflows(&top, &paths, false, &mut changed).unwrap();
+            assert!(changed.iter().any(|entry| entry == title.path));
+            let backup = top.join(format!("{path}.before-update"));
+            assert_eq!(backup.exists(), customized);
+            if customized {
+                assert_eq!(std::fs::read_to_string(&backup).unwrap(), old);
+            }
+            changed.clear();
+            write_workflows(&top, &paths, false, &mut changed).unwrap();
+            assert!(changed.is_empty());
+            std::fs::remove_dir_all(top).unwrap();
+        }
     }
 
     #[test]
