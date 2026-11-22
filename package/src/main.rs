@@ -15,6 +15,7 @@ use gitmoji_triangle::staged::Staged;
 use gitmoji_triangle::vocabulary::Vocabulary;
 
 mod history;
+mod hosting;
 mod init;
 mod local_merge;
 mod signature;
@@ -42,6 +43,10 @@ enum Action {
         #[arg(long, value_enum)]
         harness: Option<signature::Harness>,
     },
+    /// Synchronize a GitHub pull request title from its incoming commits.
+    PrTitle(hosting::TitleArgs),
+    /// Preview or submit a verified direct merge on GitHub.
+    GithubMerge(hosting::MergeArgs),
     /// Check a commit message. As a commit-msg hook: `gitmoji check --fix {1}`.
     Check {
         /// The file git wrote the message to.
@@ -266,6 +271,14 @@ fn run(cli: Cli) -> Result<ExitCode> {
         println!("{}", signature::render(harness)?);
         return Ok(ExitCode::SUCCESS);
     }
+    if let Action::PrTitle(args) = cli.command {
+        hosting::sync_title(args)?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    if let Action::GithubMerge(args) = cli.command {
+        hosting::merge(args)?;
+        return Ok(ExitCode::SUCCESS);
+    }
     let vocab = Vocabulary::builtin()?;
     if let Action::Init {
         path,
@@ -478,6 +491,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Action::Signature { .. }
+        | Action::PrTitle(_)
+        | Action::GithubMerge(_)
         | Action::Init { .. }
         | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
         Action::History { range, unmigrated } => {
