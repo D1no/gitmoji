@@ -39,6 +39,7 @@ for the whole vocabulary, and tell the person that the command is missing.
 | You are undoing a commit | `git revert <commit>`; git's own first line stays as it is |
 | The hook refused a subject | Read its message; it names the fix |
 | You want to look over the commits of your branch before it lands | `gitmoji history trunk..HEAD` (the branch it will land on, then yours) |
+| You want to review breaking changes on this branch | `gitmoji log '💥' trunk..HEAD` (substitute any vocabulary emoji) |
 | The hook says the repository adopted another version | Read what changed at the address it gives, and tell the user before you change the settings |
 
 ## Before you write code: plan the commits
