@@ -158,7 +158,7 @@ class UpgradeHistory(unittest.TestCase):
         result = self.execute(apply='repaired', expect_candidate=preview['candidate_tip'])
         edits = {row['old']: row for row in result['review_or_changed_commits']}
         self.assertEqual(set(edits), {sync, worker_merge, landing})
-        self.assertEqual(edits[sync]['subject_new'], '[`🎨✨`] main into integration: Show preview (#7)')
+        self.assertEqual(edits[sync]['subject_new'], '[`🎨✨`] main into integration: #7 Show preview')
         self.assertIn('worker into integration: recover a cancelled run', edits[worker_merge]['subject_new'])
         outer = edits[landing]['subject_new']
         self.assertTrue(outer.endswith('Recover jobs (#8)'))
@@ -179,13 +179,31 @@ class UpgradeHistory(unittest.TestCase):
             self.assertNotIn('Conflicts resolved', message)
         self.assertIn('Arrived from worker (1):', self.git('show', '-s', '--format=%B',
                                                            edits[worker_merge]['candidate']))
-        # On a second run, the local sync also ends in (#7). It must never be
-        # indexed as a claim on PR #7, even when the hosted object is unavailable.
+        # The PR still verifies on a second run when its hosted object is unavailable.
         self.pr['mergeCommit'] = {'oid': '1' * len(self.merge)}
         replay = self.execute(ref='repaired', update_pr_titles=True)
         self.assertEqual(replay['source_tip'], replay['candidate_tip'])
         self.assertFalse(replay['review_or_changed_commits'])
         self.assertEqual(replay['pr_title_summary'], preview['pr_title_summary'])
+
+    def test_older_local_caption_ending_in_an_arriving_pr_number_is_not_a_hosted_landing(self):
+        title = '[`🎨✨`] Show preview (#7)'
+        self.git('commit', '--amend', '-qm', title)
+        landing = self.git('rev-parse', 'HEAD')
+        short = self.git('rev-parse', '--short', landing)
+        self.git('switch', '-qc', 'integration', self.root)
+        self.git('commit', '--allow-empty', '-qm', 'prepare integration')
+        self.git('merge', '--no-ff', 'main', '-qm', '[`🎨✨`] main into integration: Show preview (#7)',
+                 '-m', f'Arrived from main (1):\n- {short} {title}')
+
+        # With the hosted landing object absent, the historical matcher can only
+        # verify case #7 if it excludes the local caption from its claim index.
+        self.pr['mergeCommit'] = {'oid': '1' * len(landing)}
+        report = self.execute(update_pr_titles=True)
+        self.assertEqual(report['source_tip'], report['candidate_tip'])
+        self.assertFalse(report['review_or_changed_commits'])
+        self.assertEqual(report['pr_title_summary'], {'to_change': 1, 'already_correct': 0, 'unmatched': 0})
+        self.assertEqual([edit['source_commit'] for edit in report['pr_title_updates']], [landing])
 
     def test_arrived_list_links_to_the_recaptioned_commit_in_the_candidate(self):
         self.git('switch', '-qc', 'integration', self.root)

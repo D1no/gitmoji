@@ -70,10 +70,44 @@ class LocalMerges(unittest.TestCase):
         self.git("switch", "trunk")
         self.git("update-ref", "refs/remotes/origin/workspace", "workspace")
         self.git("merge", "--no-ff", "origin/workspace")
-        self.assertEqual(self.message().splitlines()[0], "[`🎨✨`] workspace into trunk: Show activity (#4)")
+        self.assertEqual(self.message().splitlines()[0], "[`🎨✨`] workspace into trunk: #4 Show activity")
         self.assertIn("Arrived from workspace (1):", self.message())
         self.assertIn("Merge pull request #4 from upstream/piece", self.message())
         self.assertEqual(len(self.git("show", "-s", "--format=%P").split()), 2)
+
+    def test_several_incoming_pr_numbers_lead_their_own_titles(self):
+        self.git("switch", "-qc", "workspace")
+        for i, title in [(1, "[`🎨✨`] First (#1)"), (2, "[`🎨✨`] #2 Second (#9) (#2)")]:
+            self.git("switch", "-qc", f"part-{i}")
+            self.commit(f"🎨✨ #{i} (ui): show part")
+            self.git("switch", "workspace")
+            self.git("merge", "--no-ff", f"part-{i}", "-m", title)
+        self.git("switch", "trunk")
+        self.git("merge", "--no-ff", "workspace")
+        self.assertEqual(self.message().splitlines()[0],
+                         "[`🎨✨`] workspace into trunk: #2 Second (#9); #1 First")
+        self.assertIn(" [`🎨✨`] #2 Second (#9) (#2)", self.message())
+
+    def test_git_subject_ticket_survives_without_claiming_a_landing(self):
+        self.git("switch", "-qc", "feature")
+        original = "🎨✨ #7 (ui): Show activity (#77)"
+        self.commit(original)
+        self.git("switch", "trunk")
+        self.git("merge", "--no-ff", "feature")
+        self.assertEqual(self.message().splitlines()[0], "[`🎨✨`] feature into trunk: Show activity (ref #77)")
+        self.assertIn(original, self.message().split("\n\n")[1])
+
+    def test_single_pr_with_a_distinct_trailing_issue(self):
+        self.git("switch", "-qc", "workspace")
+        self.git("switch", "-qc", "piece")
+        self.commit("🎨✨ #77 (ui): show activity")
+        self.git("switch", "workspace")
+        self.git("merge", "--no-ff", "piece", "-m", "Merge pull request #4 from upstream/piece",
+                 "-m", "[`🎨✨`] #4 Show activity (#77)")
+        self.git("switch", "trunk")
+        self.git("merge", "--no-ff", "workspace")
+        self.assertEqual(self.message().splitlines()[0],
+                         "[`🎨✨`] workspace into trunk: #4 Show activity (ref #77)")
 
     def test_octopus_shared_ancestor_and_bounded_body(self):
         self.git("switch", "-qc", "common")
@@ -109,7 +143,7 @@ class LocalMerges(unittest.TestCase):
         self.run_in_repo("gitmoji", "merge-message", ".git/MERGE_MSG", "merge")
         self.assertEqual(path.read_bytes(), original)
         self.git("commit", "--no-edit")
-        self.assertEqual(self.message().splitlines()[0], "squashed into trunk: Show preview (#2)")
+        self.assertEqual(self.message().splitlines()[0], "squashed into trunk: #2 Show preview")
         self.assertIn("[`🎨✨`] Show preview (#2)", self.message().split("\n\n", 1)[1])
 
     def test_untagged_and_manual_message(self):

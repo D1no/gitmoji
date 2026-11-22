@@ -166,23 +166,67 @@ struct Arrival<'a> {
     body: &'a str,
 }
 
+/// Separate a landing marker from a human title while keeping any earlier
+/// issue references. Only a proven PR row gives this number PR semantics.
+fn trailing_reference(title: &str) -> Option<(&str, &str)> {
+    let (before, number) = title.strip_suffix(')')?.rsplit_once("(#")?;
+    (!number.is_empty() && number.bytes().all(|c| c.is_ascii_digit()))
+        .then_some((before.trim_end(), number))
+}
+
 impl Arrival<'_> {
-    fn human_title(&self, vocab: &Vocabulary) -> String {
+    fn pr_title(&self, vocab: &Vocabulary) -> Option<(&str, &str)> {
         let title = caption::without_inventory(self.subject, vocab);
-        if let Some((number, _)) = self
+        // A squash can retain the title's inventory and suffix while losing
+        // the authored commits. Its title identifies the incoming PR only.
+        if (self.parents.split_whitespace().count() <= 1 && title == self.subject)
+            || !crate::history::is_pr_merge(self.subject, self.body, vocab)
+        {
+            return None;
+        }
+        if let Some((number, from)) = self
             .subject
             .strip_prefix("Merge pull request #")
             .and_then(|rest| rest.split_once(" from "))
-            && number.parse::<u64>().is_ok_and(|n| n > 0)
-            && let Some(line) = self.body.lines().find(|line| !line.trim().is_empty())
         {
-            let human = caption::without_inventory(line, vocab);
-            let suffix = format!("(#{number})");
-            return if human.ends_with(&suffix) {
-                human.to_owned()
-            } else {
-                format!("{human} {suffix}")
-            };
+            let title = self
+                .body
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or(from);
+            return Some((number, caption::without_inventory(title, vocab)));
+        }
+        if let Some((number, title)) = self
+            .subject
+            .strip_prefix("Merge #")
+            .and_then(|rest| rest.split_once(' '))
+        {
+            return Some((number, caption::without_inventory(title, vocab)));
+        }
+        let (title, number) = trailing_reference(title)?;
+        Some((number, title))
+    }
+
+    fn human_title(&self, vocab: &Vocabulary) -> String {
+        let title = caption::without_inventory(self.subject, vocab);
+        if let Some((number, mut human)) = self.pr_title(vocab) {
+            // Some historical rows already repeat the PR number in their title.
+            while let Some((before, suffix)) = trailing_reference(human)
+                && suffix == number
+            {
+                human = before;
+            }
+            let prefix = format!("#{number}");
+            if human == prefix || human.is_empty() {
+                return prefix;
+            }
+            if human
+                .strip_prefix(&prefix)
+                .is_some_and(|rest| rest.starts_with(' '))
+            {
+                return human.to_owned();
+            }
+            return format!("{prefix} {human}");
         }
         if self.parents.split_whitespace().count() <= 1
             && let Some((heading, summary)) = title.split_once("): ")
@@ -194,11 +238,6 @@ impl Arrival<'_> {
             return summary.to_owned();
         }
         title.to_owned()
-    }
-
-    fn is_pr(&self, vocab: &Vocabulary) -> bool {
-        self.parents.split_whitespace().count() > 1
-            && crate::history::is_pr_merge(self.subject, self.body, vocab)
     }
 }
 
@@ -236,7 +275,7 @@ fn render(direction: &Direction, base: &str, heads: &[&str], vocab: &Vocabulary)
     }
     let summary = match rows.as_slice() {
         [one] => one.human_title(vocab),
-        [first, second, rest @ ..] if rows.iter().all(|row| row.is_pr(vocab)) => {
+        [first, second, rest @ ..] if rows.iter().all(|row| row.pr_title(vocab).is_some()) => {
             let titles = format!(
                 "{}; {}",
                 first.human_title(vocab),
@@ -249,6 +288,12 @@ fn render(direction: &Direction, base: &str, heads: &[&str], vocab: &Vocabulary)
             }
         }
         _ => format!("{} commits", rows.len()),
+    };
+    // Only an actual landing ends in "(#N)". A free-form incoming title can
+    // mention a ticket there too; preserve it without implying this landed it.
+    let summary = match trailing_reference(&summary) {
+        Some((before, number)) => format!("{before} (ref #{number})").trim_start().to_owned(),
+        None => summary,
     };
     let mut message = String::new();
     if let Some(prefix) = caption::merge_inventory(&incoming.subjects, vocab) {
