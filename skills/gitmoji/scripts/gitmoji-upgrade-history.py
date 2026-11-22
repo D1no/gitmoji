@@ -421,21 +421,21 @@ def proposal(oid, parents, message, prs):
     return Proposal()
 
 
-def candidate_inventory(inventory, remapped, new_subjects):
-    # The historical renderer reads the source graph. An arriving merge may
-    # already have a new ID (and subject) earlier in this same candidate.
+def candidate_inventory(inventory, parents, remapped, new_subjects):
+    # Limit edits to list entries that match the original first-parent arrival
+    # at that position, including its subject. A contributor can edit the body.
     rows = inventory.split(b'\n')
-    for i, row in enumerate(rows):
-        if not row.startswith(b'- '):
+    original = git('log', '--first-parent', '--topo-order', '--no-patch', '--no-color',
+                   '--no-notes', '--no-show-signature', '--encoding=UTF-8', '-z', '--format=%H%x00%s',
+                   f'--max-count={len(rows) - 1}', '^' + parents[0], *parents[1:], '--').split(b'\0')
+    for i, (full, subject) in enumerate(zip(original[::2], original[1::2]), start=1):
+        oid = full.decode('ascii')
+        if oid not in remapped or not rows[i].startswith(b'- '):
             continue
-        short, _, subject = row[2:].partition(b' ')
-        ids = git('rev-parse', '--disambiguate=' + short.decode('ascii')).splitlines()
-        if len(ids) != 1:
-            raise ValueError('cannot resolve an incoming commit in the source inventory')
-        oid = ids[0].decode('ascii')
-        if oid in remapped:
-            # The candidate object may not exist yet during a read-only preview.
-            # A full ID works in both the preview and the eventual clone.
+        short, separator, listed_subject = rows[i][2:].partition(b' ')
+        if separator and len(short) >= 4 and full.startswith(short) and listed_subject == subject:
+            # A full candidate ID also works in the read-only preview, before
+            # the new object exists for Git to abbreviate.
             rows[i] = b'- ' + remapped[oid].encode() + b' ' + new_subjects.get(oid, subject)
     return b'\n'.join(rows)
 
@@ -495,6 +495,7 @@ def make_candidate(args):
         except ReviewNeeded as error:
             change = Proposal(evidence=str(error))
         new, reason, route, landing_number = change
+        inventory_updated = False
         if title_preview and new is None and (len(parents) >= 2 or oid in prs.by_oid):
             unmatched += 1
         if title_preview and landing_number is not None:
@@ -514,7 +515,7 @@ def make_candidate(args):
                 if len(parents) >= 2 and landing_number is None:
                     # The first body paragraph also identifies a local merge when its
                     # summary ends with a reference to one of the arriving PRs.
-                    inventory = candidate_inventory(route, remapped, new_subjects) if remapped else route
+                    inventory = candidate_inventory(route, parents, remapped, new_subjects) if remapped else route
                     provenance = inventory + b'\n\n' + provenance
                 else:
                     provenance += route + b'\n'
@@ -526,6 +527,15 @@ def make_candidate(args):
             if new is None and reason:
                 changes.append({'old': oid, 'subject': subject.decode(errors='replace'), 'review': reason})
             continue
+        elif new == subject and landing_number is None and len(parents) >= 2:
+            # A live caption (or one from a previous upgrade) already has a
+            # user-visible heading. Only its managed Arrived paragraph may change.
+            head, _, body = message.partition(b'\n\n')
+            inventory, gap, remainder = body.partition(b'\n\n')
+            updated = candidate_inventory(inventory, parents, remapped, new_subjects)
+            if updated != inventory:
+                message = head + b'\n\n' + updated + gap + remainder
+                inventory_updated = True
         rebuilt = []
         for field in fields:
             key = field.split(b' ', 1)[0]
@@ -535,7 +545,7 @@ def make_candidate(args):
                 continue
             if key == b'mergetag':
                 blocked.append(oid)
-            if key == b'encoding' and new is not None and new != subject:
+            if key == b'encoding' and (inventory_updated or (new is not None and new != subject)):
                 encoding = field[9:].strip().lower()
                 if encoding not in (b'utf-8', b'utf8'):
                     blocked.append(oid)
@@ -550,6 +560,8 @@ def make_candidate(args):
         entry = {'old': oid, 'candidate': result, 'subject': subject.decode(errors='replace')}
         if new is not None and new != subject:
             entry.update(subject_new=new.decode(), evidence=reason)
+        elif inventory_updated:
+            entry.update(inventory_updated=True, evidence='arriving commit rewritten in this candidate')
         elif reason and new is None:
             entry['review'] = reason
         changes.append(entry)

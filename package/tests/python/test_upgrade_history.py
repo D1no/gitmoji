@@ -197,6 +197,36 @@ class UpgradeHistory(unittest.TestCase):
         self.assertTrue(incoming.endswith('[`🎨✨`] Show preview (#7)'))
         self.assertIn('- ' + incoming, self.git('show', '-s', '--format=%B', 'candidate').splitlines())
 
+    def test_live_caption_refreshes_only_its_incoming_row_when_earlier_pr_is_rewritten(self):
+        self.git('switch', '-qc', 'integration', self.root)
+        self.git('commit', '--allow-empty', '-qm', 'prepare integration')
+        self.git('merge', '--no-ff', '--no-commit', 'main')
+        path = Path(self.git('rev-parse', '--git-path', 'MERGE_MSG'))
+        upgrade.run('gitmoji', 'merge-message', str(path), 'merge')
+        original = path.read_bytes().rstrip(b'\n')
+        old_sha = self.git('rev-parse', '--short', self.merge).encode()
+        old_row = b'- ' + old_sha + b' Merge pull request #7 from fork/topic'
+        self.assertIn(old_row, original)
+        # The same text in author notes, outside the managed paragraph, is evidence
+        # about the original history and should survive verbatim.
+        notes = (b'\n\nMy record of the pre-rewrite state:\n' + old_row +
+                 b'\n\nAgent: Example\nMethod: paired review\n')
+        header, _, inventory = original.partition(b'\n\n')
+        custom_header = header.split(b': ', 1)[0] + b': bring the reviewed preview into the release'
+        path.write_bytes(custom_header + b'\n\n' + inventory + b'\n\nConflicted paths:\n- preview.txt' + notes)
+        self.git('commit', '--cleanup=verbatim', '-q', '-F', str(path))
+        before = upgrade.read_commit(self.git('rev-parse', 'HEAD'))[2]
+        preview = self.execute()
+        self.execute(apply='candidate', expect_candidate=preview['candidate_tip'])
+        after = upgrade.read_commit(self.git('rev-parse', 'candidate'))[2]
+        new_row = b'- ' + self.git('show', '-s', '--format=%H %s', 'candidate^2').encode()
+        self.assertEqual(after, before.replace(old_row, new_row, 1))
+        self.assertTrue(after.endswith(notes))
+        self.assertTrue(preview['review_or_changed_commits'][-1]['inventory_updated'])
+        again = self.execute(ref='candidate')
+        self.assertEqual(again['candidate_tip'], again['source_tip'])
+        self.assertEqual(again['review_or_changed_commits'], [])
+
     def test_old_nine_slot_nested_landing_can_expand_after_a_history_rewrite(self):
         self.git('switch', '-qc', 'integration', self.root)
         self.git('commit', '--allow-empty', '-qm', 'start integration')
