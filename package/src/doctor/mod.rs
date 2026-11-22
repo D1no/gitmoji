@@ -18,6 +18,7 @@ enum Status {
     Ok,
     Missing,
     Mismatch,
+    Bypassed,
     Stale,
     NotEnrolled,
 }
@@ -34,6 +35,7 @@ impl fmt::Display for Status {
             Self::Ok => "ok",
             Self::Missing => "missing",
             Self::Mismatch => "mismatch",
+            Self::Bypassed => "bypassed",
             Self::Stale => "stale",
             Self::NotEnrolled => "not-enrolled",
         };
@@ -133,9 +135,11 @@ fn binary_row(binary: &str, pin: Option<&str>) -> Row {
     }
 }
 
-fn root() -> Option<PathBuf> {
+// Git can return non-UTF-8 paths on Unix and CRLF on Windows.
+fn git_path(top: &Path, args: &[&str]) -> Option<PathBuf> {
     let out = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(top)
+        .args(args)
         .output()
         .ok()?;
     if !out.status.success() {
@@ -157,7 +161,7 @@ fn root() -> Option<PathBuf> {
 }
 
 pub(super) fn run(config: Option<&Path>, json: bool) -> Result<ExitCode> {
-    let rows = if let Some(top) = root() {
+    let rows = if let Some(top) = git_path(Path::new("."), &["rev-parse", "--show-toplevel"]) {
         let file = config.map(ToOwned::to_owned).or_else(|| locate(&top));
         let version = env!("CARGO_PKG_VERSION");
         let (pin_row, pin) = pin_row(file.as_deref(), version);
