@@ -1,0 +1,16 @@
+# Lefthook hooks for Gitmoji Triangle, as `gitmoji init` writes them.
+# `gitmoji` must be on PATH, so that git hooks find it.
+
+pre-commit:
+  commands:
+    gitmoji-staged:
+      # Says when the staged files look like more than one commit. Blocks only if one_scope = "error".
+      run: gitmoji staged
+
+commit-msg:
+  commands:
+    gitmoji-check:
+      # Writes emojis for typed shortcodes, closes the message with the line that names the
+      # vocabulary version, then refuses a message that is not in the convention and says
+      # what to change.
+      run: gitmoji check --fix {1}

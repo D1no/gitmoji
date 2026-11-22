@@ -13,4 +13,9 @@ commit-msg:
       # Writes emojis for typed shortcodes, closes the message with the line that names the
       # vocabulary version, then refuses a message that is not in the convention and says
       # what to change.
-      run: gitmoji check --fix {1}
+      run: gitmoji check --fix "{1}"
+
+prepare-commit-msg:
+  commands:
+    gitmoji-merge-message:
+      run: gitmoji merge-message "{1}" "{2}"
