@@ -397,6 +397,11 @@ fn stored_dependabot_upgrades_pass_checks_and_get_one_caption() {
             "[`🧩⬆️`] Bump ms from 2.1.0 to 2.1.3",
         ),
         (
+            "🧩:arrow_up: — (deps): Bump ms",
+            "🧩⬆️ — (deps): Bump ms from 2.1.0 to 2.1.3 in /applications/customer-services/reporting",
+            "[`🧩⬆️`] Bump ms from 2.1.0 to 2.1.3 in /applications/customer-services/reporting",
+        ),
+        (
             ":construction_worker::arrow_up: — (ci): Bump the actions group with 2 updates",
             "👷⬆️ — (ci): Bump the actions group with 2 updates",
             "[`👷⬆️`] Bump the actions group with 2 updates",
@@ -438,6 +443,20 @@ fn stored_dependabot_upgrades_pass_checks_and_get_one_caption() {
         ],
     );
     assert_eq!(text(&edited).trim(), "[`👷⬆️`] Adopt the runner update");
+    let custom = "👷⬆️ — (billing): Review the invoice worker";
+    let rendered = gitmoji(
+        here,
+        &[
+            "merge-caption",
+            "--pr",
+            "1",
+            "--title",
+            custom,
+            "HEAD^",
+            "HEAD",
+        ],
+    );
+    assert_eq!(text(&rendered).trim(), format!("[`👷⬆️`] {custom}"));
     assert!(!gitmoji(here, &["check", "-m", raw]).status.success());
     git(here, &["commit", "--allow-empty", "-m", raw]);
     assert!(!gitmoji(here, &["history", "HEAD^..HEAD"]).status.success());
