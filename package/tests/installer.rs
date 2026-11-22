@@ -125,6 +125,7 @@ fn shared_skill_upgrade_preserves_index_and_prints_stageable_target_paths() {
 
     // Run the exact command that a contributor would copy from the instructions.
     let output = String::from_utf8(run.stdout).unwrap();
+    assert!(output.contains("🔺 gitmoji `"));
     let commands = output
         .split_once("  cd ")
         .unwrap()
@@ -168,6 +169,90 @@ fn shared_skill_upgrade_preserves_index_and_prints_stageable_target_paths() {
         git(&repo, &["show", &format!(":{clean}")]),
         fs::read_to_string(repo.join(clean)).unwrap()
     );
+    fs::remove_dir_all(repo).unwrap();
+}
+
+#[test]
+fn existing_repo_skill_refresh_suggests_import_with_source() {
+    let repo = std::env::temp_dir().join(format!("gitmoji-refresh-skill-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&repo);
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    fs::write(repo.join("lefthook.yml"), "# project-managed hooks\n").unwrap();
+    let first = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .current_dir(&repo)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(first.status.success());
+    assert!(
+        String::from_utf8(first.stdout)
+            .unwrap()
+            .contains("🔺 gitmoji `")
+    );
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "adopt"]);
+
+    let reference = ".claude/skills/gitmoji/references/pull-requests.md";
+    fs::write(repo.join(reference), "outdated reference\n").unwrap();
+    git(&repo, &["add", reference]);
+    git(&repo, &["commit", "-qm", "outdated skill"]);
+
+    let refresh = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .current_dir(&repo)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(refresh.status.success());
+    let out = String::from_utf8(refresh.stdout).unwrap();
+    assert!(out.contains("🤖📥 <ticket> (gitmoji): import the gitmoji skill from v"));
+    assert!(out.contains("Source: https://github.com/D1no/gitmoji/releases/tag/v"));
+    assert!(!out.contains("🤖📝"));
+    fs::remove_dir_all(repo).unwrap();
+}
+
+#[test]
+fn mixed_upgrade_prints_separate_staging_for_imported_and_project_files() {
+    let repo = std::env::temp_dir().join(format!("gitmoji-mixed-upgrade-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&repo);
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    fs::write(repo.join("lefthook.yml"), "# project-managed hooks\n").unwrap();
+    let first = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .current_dir(&repo)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(first.status.success());
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "adopt"]);
+
+    // Modify both an upstream skill file (uncommitted -> creates .before-update backup) and CLAUDE.md.
+    let skill = ".claude/skills/gitmoji/SKILL.md";
+    fs::write(repo.join(skill), "outdated custom skill\n").unwrap();
+    fs::write(repo.join("CLAUDE.md"), "# Project\n").unwrap();
+
+    let mixed = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .current_dir(&repo)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(mixed.status.success());
+    let out = String::from_utf8(mixed.stdout).unwrap();
+    let (_, after_imported_hdr) = out
+        .split_once("1. Shipped skill and enrolled workflow templates:")
+        .unwrap();
+    let (imported_section, local_section) = after_imported_hdr
+        .split_once("2. Project-owned configuration, hooks, or instructions:")
+        .unwrap();
+    assert!(imported_section.contains(skill));
+    assert!(!imported_section.contains("before-update"));
+    assert!(!imported_section.contains("CLAUDE.md"));
+    assert!(imported_section.contains("🤖📥 <ticket> (gitmoji): import the gitmoji skill from v"));
+    assert!(imported_section.contains("Source: https://github.com/D1no/gitmoji/releases/tag/v"));
+    assert!(local_section.contains("CLAUDE.md"));
+    assert!(!local_section.contains(skill));
+    assert!(!local_section.contains("🤖📥"));
     fs::remove_dir_all(repo).unwrap();
 }
 

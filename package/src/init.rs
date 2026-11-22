@@ -239,6 +239,15 @@ pub fn run(
         println!("1. The skill, in {SKILL_DIR}");
         write_skill(&top, &paths, vocab, &mut changed)?;
     }
+    let skill_dir = format!("{}/", paths.resolve(SKILL_DIR)?);
+    let earlier_skill_dir = format!("{EARLIER_SKILL_DIR}/");
+    let is_imported = |file: &str| {
+        file.starts_with(&skill_dir)
+            || file.starts_with(&earlier_skill_dir)
+            || WORKFLOWS
+                .iter()
+                .any(|workflow| file == workflow.path || file == workflow.legacy_path)
+    };
 
     println!("2. Settings");
     let adopted = write_settings(&top, vocab, tickets, &mut changed)?;
@@ -282,44 +291,28 @@ pub fn run(
     changed.dedup();
     if changed.is_empty() {
         println!("Done. Nothing in the repository changed: the hooks are set up on this machine.");
-    } else {
+    } else if adopted {
         println!("Done. This run wrote or changed these files. Commit exactly these:");
         println!();
         println!("  cd {}", shell_path(&top.to_string_lossy()));
-        println!("  git --literal-pathspecs add -- \\");
-        for (index, file) in changed.iter().enumerate() {
-            let more = if index + 1 < changed.len() { " \\" } else { "" };
-            println!("    {}{more}", shell_path(file));
-        }
-        if adopted {
-            println!(
-                "  git commit -m '🔺 gitmoji `{}`: adopt the Triangle convention'",
-                vocab.version
-            );
-        } else {
-            println!(
-                "  git commit -m '🤖📝 <ticket> (gitmoji): update the gitmoji skill and settings' \\"
-            );
-            println!(
-                "    -m 'Brings them in line with gitmoji {}.'",
-                vocab.version
-            );
-            println!();
-            println!(
-                "Put the ticket this update belongs to in place of <ticket>, written like {}.",
-                ticket_example(&top)
-            );
-            println!(
-                "What changed in this version: {}",
-                gitmoji_triangle::CHANGELOG
-            );
-            println!(
-                "To adopt this release, set its version in gitmoji.toml and commit that with:"
-            );
-            println!(
-                "  🔺 gitmoji `{}`: <what changes for this repository>",
-                vocab.version
-            );
+        print_stage_command(&changed);
+        println!(
+            "  git commit -m '🔺 gitmoji `{}`: adopt the Triangle convention'",
+            vocab.version
+        );
+    } else {
+        let imported: Vec<String> = changed
+            .iter()
+            .filter(|file| is_imported(file))
+            .cloned()
+            .collect();
+        let local: Vec<String> = changed
+            .iter()
+            .filter(|file| !is_imported(file))
+            .cloned()
+            .collect();
+        for line in existing_repo_commit_guidance(&top, vocab, &imported, &local) {
+            println!("{line}");
         }
     }
     let leftovers = leftovers(&top)?;
@@ -373,6 +366,120 @@ fn ticket_example(top: &Path) -> String {
     locate(top)
         .and_then(|file| Config::load(&file).ok())
         .map_or_else(|| "#123".to_string(), |config| config.ticket_example)
+}
+
+/// Which scope placeholder fits the repository's `[scope].allowed` setting.
+fn suggested_scope(top: &Path) -> (String, Option<String>) {
+    let allowed = locate(top)
+        .and_then(|file| Config::load(&file).ok())
+        .map(|config| config.scopes_allowed)
+        .unwrap_or_default();
+    if allowed.is_empty() || allowed.iter().any(|scope| scope == "gitmoji") {
+        ("gitmoji".to_string(), None)
+    } else {
+        ("<scope>".to_string(), Some(allowed.join(", ")))
+    }
+}
+
+fn print_stage_command(files: &[String]) {
+    println!("  git --literal-pathspecs add -- \\");
+    for (index, file) in files.iter().enumerate() {
+        let more = if index + 1 < files.len() { " \\" } else { "" };
+        println!("    {}{more}", shell_path(file));
+    }
+}
+
+fn push_stage_command(lines: &mut Vec<String>, files: &[String]) {
+    lines.push("  git --literal-pathspecs add -- \\".to_string());
+    for (index, file) in files.iter().enumerate() {
+        let more = if index + 1 < files.len() { " \\" } else { "" };
+        lines.push(format!("    {}{more}", shell_path(file)));
+    }
+}
+
+fn existing_repo_commit_guidance(
+    top: &Path,
+    vocab: &Vocabulary,
+    imported: &[String],
+    local: &[String],
+) -> Vec<String> {
+    let ticket = ticket_example(top);
+    let (scope, allowed_note) = suggested_scope(top);
+    let mut lines = Vec::new();
+    let mixed = !imported.is_empty() && !local.is_empty();
+    if mixed {
+        lines.push(
+            "Done. This run updated both shipped Gitmoji files and project-owned setup. Commit them separately:"
+                .to_string(),
+        );
+    } else {
+        lines
+            .push("Done. This run wrote or changed these files. Commit exactly these:".to_string());
+    }
+    lines.push(String::new());
+    lines.push(format!("  cd {}", shell_path(&top.to_string_lossy())));
+
+    if !imported.is_empty() {
+        if mixed {
+            lines.push(String::new());
+            lines.push("1. Shipped skill and enrolled workflow templates:".to_string());
+        }
+        push_stage_command(&mut lines, imported);
+        let has_skill = imported.iter().any(|file| !file.starts_with(".github/"));
+        let has_workflows = imported.iter().any(|file| file.starts_with(".github/"));
+        let noun = match (has_skill, has_workflows) {
+            (true, true) => "import the gitmoji skill and workflows",
+            (true, false) => "import the gitmoji skill",
+            (false, true) => "import the gitmoji workflows",
+            (false, false) => "import the gitmoji skill",
+        };
+        lines.push(format!(
+            "  git commit -m '🤖📥 <ticket> ({scope}): {noun} from v{}' \\",
+            vocab.version
+        ));
+        lines.push(format!(
+            "    -m 'Brings them in line with gitmoji {}.' \\",
+            vocab.version
+        ));
+        lines.push(format!(
+            "    -m 'Source: https://github.com/D1no/gitmoji/releases/tag/v{}'",
+            vocab.version
+        ));
+        lines.push(String::new());
+        lines.push(format!(
+            "Put the ticket this update belongs to in place of <ticket>, written like {ticket}."
+        ));
+    }
+
+    if !local.is_empty() {
+        if mixed {
+            lines.push(String::new());
+            lines.push("2. Project-owned configuration, hooks, or instructions:".to_string());
+        }
+        push_stage_command(&mut lines, local);
+        lines.push(String::new());
+        lines.push(format!(
+            "No shipped skill files are in this group; only local configuration, hooks, or instructions changed. Pick the intent that fits those files (for example `🤖🔧`, `🧱🔧`, or `👷🔧`), with a ticket like {ticket} and ({scope})."
+        ));
+    }
+
+    if let Some(allowed) = allowed_note {
+        lines.push(format!(
+            "Put one of this repository's allowed scopes in place of <scope>: {allowed}."
+        ));
+    }
+    lines.push(format!(
+        "What changed in this version: {}",
+        gitmoji_triangle::CHANGELOG
+    ));
+    lines.push(
+        "To adopt this release, set its version in gitmoji.toml and commit that with:".to_string(),
+    );
+    lines.push(format!(
+        "  🔺 gitmoji `{}`: <what changes for this repository>",
+        vocab.version
+    ));
+    lines
 }
 
 /// The gitmoji commands a hook file runs, each as its words from `gitmoji` on. Comment
@@ -2041,6 +2148,82 @@ Work it out once, then add a script here so the next agent does not have to.
                 .is_file()
         );
         assert!(!top.join(SKILL_DIR).join("scripts").exists());
+        std::fs::remove_dir_all(top).unwrap();
+    }
+
+    #[test]
+    fn commit_suggestion_distinguishes_adoption_skill_import_and_config_changes() {
+        let top = scratch("commit-suggestion");
+        let vocab = Vocabulary::builtin().unwrap();
+
+        let import = existing_repo_commit_guidance(
+            &top,
+            &vocab,
+            &[".claude/skills/gitmoji/SKILL.md".to_string()],
+            &[],
+        )
+        .join("\n");
+        assert!(import.contains(&format!(
+            "🤖📥 <ticket> (gitmoji): import the gitmoji skill from v{}",
+            vocab.version
+        )));
+        assert!(import.contains(&format!(
+            "Source: https://github.com/D1no/gitmoji/releases/tag/v{}",
+            vocab.version
+        )));
+        assert!(!import.contains("🤖📝"));
+        assert!(!import.contains("Project-owned configuration"));
+
+        write(
+            &top.join("gitmoji.toml"),
+            "[scope]\nallowed = [\"repo\", \"ci\"]\n",
+        )
+        .unwrap();
+        let scoped = existing_repo_commit_guidance(
+            &top,
+            &vocab,
+            &[
+                ".claude/skills/gitmoji/SKILL.md".to_string(),
+                ".github/workflows/gitmoji-commits.yml".to_string(),
+            ],
+            &[],
+        )
+        .join("\n");
+        assert!(scoped.contains("🤖📥 <ticket> (<scope>): import the gitmoji skill and workflows"));
+        assert!(scoped.contains("allowed scopes in place of <scope>: repo, ci"));
+
+        let config_only = existing_repo_commit_guidance(
+            &top,
+            &vocab,
+            &[],
+            &["CLAUDE.md".to_string(), "lefthook.yml".to_string()],
+        )
+        .join("\n");
+        assert!(!config_only.contains("🤖📥"));
+        assert!(!config_only.contains("🤖📝"));
+        assert!(config_only.contains("CLAUDE.md"));
+        assert!(config_only.contains("lefthook.yml"));
+        assert!(config_only.contains("Pick the intent that fits those files"));
+
+        let mixed = existing_repo_commit_guidance(
+            &top,
+            &vocab,
+            &[".claude/skills/gitmoji/SKILL.md".to_string()],
+            &["CLAUDE.md".to_string(), "lefthook.yml".to_string()],
+        )
+        .join("\n");
+        let (first, second) = mixed
+            .split_once("2. Project-owned configuration, hooks, or instructions:")
+            .unwrap();
+        assert!(first.contains(".claude/skills/gitmoji/SKILL.md"));
+        assert!(!first.contains("CLAUDE.md"));
+        assert!(!first.contains("lefthook.yml"));
+        assert!(first.contains("🤖📥 <ticket> (<scope>): import the gitmoji skill"));
+        assert!(second.contains("CLAUDE.md"));
+        assert!(second.contains("lefthook.yml"));
+        assert!(!second.contains(".claude/skills/gitmoji/SKILL.md"));
+        assert!(!second.contains("🤖📥"));
+
         std::fs::remove_dir_all(top).unwrap();
     }
 
