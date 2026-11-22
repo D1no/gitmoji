@@ -71,6 +71,12 @@ Both hooks look for `gitmoji.toml`, then `.config/gitmoji.toml`, then the legacy
 
 For a local experiment, `gitmoji --config path/to/policy.toml staged` uses that file from disk. Checking text with `gitmoji check -m` or checking a separate draft also uses the working copy so you can try a policy before staging it.
 
+## Find commits by emoji
+
+Run `gitmoji log '⬆' trunk..HEAD` to see dependency upgrades on a branch, newest first. Omit the range to search everything reachable from HEAD. The filter accepts a single vocabulary emoji or its GitHub shortcode. It matches any slot in the authored heading, including an optional modifier or a standalone marker. For example, `gitmoji log '💥'` finds breaking changes across areas. Merge inventories and emoji mentioned only in prose do not add matches.
+
+The log displays the vocabulary’s canonical glyphs. Searching for `⬆`, `⬆️` or `:arrow_up:` gives the same results, including recorded Dependabot job headings. Use `git show -s --format=%s <sha>` to inspect the original spelling in Git.
+
 ## Reviewing untagged commits during adoption
 
 The hook normally rejects a missing intention. To allow ordinary prose while a team

@@ -7,7 +7,7 @@ use gitmoji_triangle::caption;
 use gitmoji_triangle::config::{Audience, Config};
 use gitmoji_triangle::vocabulary::{Slot, Vocabulary};
 
-use crate::history::{dependabot_message, git, pr_landing};
+use crate::history::{dependabot_message, display_subject, git, pr_landing};
 
 const OTHER: &str = "Other changes";
 
@@ -276,7 +276,7 @@ fn unlisted_first_parent(
         let marker =
             caption::heading(subject, vocab).is_some_and(|h| matches!(h.activity, "🔖" | "🔺"));
         if !marker && !claimed.contains(hash) {
-            let subject = dependabot_message(vocab, author, subject);
+            let subject = display_subject(vocab, author, subject);
             omitted.push(format!(
                 "  {short} {}",
                 subject.replace(char::is_control, " ")

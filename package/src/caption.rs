@@ -18,6 +18,26 @@ pub struct Heading<'v> {
     pub modifier: Option<&'v str>,
 }
 
+impl<'v> Heading<'v> {
+    /// Canonical symbols in their authored order, including standalone markers.
+    pub fn symbols(self) -> impl Iterator<Item = &'v str> {
+        [self.area, Some(self.activity), self.modifier]
+            .into_iter()
+            .flatten()
+    }
+
+    /// Display the leading emoji run canonically, retaining the original spacing and text.
+    pub fn display(self, subject: &str) -> String {
+        let trimmed = subject.trim_start();
+        let start = subject.len() - trimmed.len();
+        let end = start + trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+        let mut shown = String::from(&subject[..start]);
+        shown.extend(self.symbols());
+        shown.push_str(&subject[end..]);
+        shown
+    }
+}
+
 /// Read the leading symbols of a historical authored subject.
 pub fn heading<'v>(subject: &str, vocab: &'v Vocabulary) -> Option<Heading<'v>> {
     let cluster = subject.split_whitespace().next()?;
