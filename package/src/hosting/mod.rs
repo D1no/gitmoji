@@ -180,7 +180,12 @@ impl Client {
         })
     }
 
-    fn request(&self, method: &str, url: &str, payload: Option<&Value>) -> Result<Value> {
+    fn send(
+        &self,
+        method: &str,
+        url: &str,
+        payload: Option<&Value>,
+    ) -> Result<ureq::http::Response<ureq::Body>> {
         let auth = format!("Bearer {}", self.token);
         let mut request = ureq::http::Request::builder()
             .method(method)
@@ -194,10 +199,13 @@ impl Client {
         } else {
             Vec::new()
         };
-        let mut response = self
-            .agent
+        self.agent
             .run(request.body(&bytes[..])?)
-            .with_context(|| format!("GitHub {method} request failed"))?;
+            .with_context(|| format!("GitHub {method} request failed"))
+    }
+
+    fn request(&self, method: &str, url: &str, payload: Option<&Value>) -> Result<Value> {
+        let mut response = self.send(method, url, payload)?;
         let status = response.status();
         if status.as_u16() == 422 {
             bail!(
