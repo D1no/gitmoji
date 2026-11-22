@@ -37,6 +37,10 @@ const REFERENCE: &str = "references/vocabulary.txt";
 const SKILL: &[(&str, &str)] = &[
     ("SKILL.md", include_str!("../../skills/gitmoji/SKILL.md")),
     (
+        "references/dependabot.md",
+        include_str!("../../skills/gitmoji/references/dependabot.md"),
+    ),
+    (
         "references/upgrade-history.md",
         include_str!("../../skills/gitmoji/references/upgrade-history.md"),
     ),
@@ -2232,6 +2236,11 @@ Work it out once, then add a script here so the next agent does not have to.
         assert!(
             top.join(SKILL_DIR)
                 .join("references/upgrade-history.md")
+                .is_file()
+        );
+        assert!(
+            top.join(SKILL_DIR)
+                .join("references/dependabot.md")
                 .is_file()
         );
         assert!(!top.join(SKILL_DIR).join("scripts").exists());
