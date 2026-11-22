@@ -1421,3 +1421,52 @@ fn directory_and_submodule_entries_do_not_hide_the_next_policy_file() {
     );
     assert_fallback();
 }
+
+#[test]
+fn default_policy_note_names_only_the_working_copy_in_the_current_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("repo");
+    let linked = dir.path().join("linked");
+    std::fs::create_dir(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "trunk"]);
+    git(&repo, &["commit", "-qm", "base", "--allow-empty"]);
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "topic",
+            linked.to_str().unwrap(),
+        ],
+    );
+    std::fs::create_dir(linked.join(".config")).unwrap();
+    let nested = linked.join("sub");
+    std::fs::create_dir(&nested).unwrap();
+    let staged = |dir| {
+        let result = gitmoji(dir, &["staged"]);
+        assert!(result.status.success(), "{}", text(&result));
+        String::from_utf8(result.stderr).unwrap()
+    };
+    assert!(staged(&nested).is_empty());
+    let file = linked.join(".config/gitmoji.toml");
+    std::fs::write(&file, b"\xff").unwrap();
+    std::fs::write(linked.join(".gitignore"), ".config/\n").unwrap();
+    let note = "gitmoji: using built-in defaults. Stage .config/gitmoji.toml to apply its settings to this commit.";
+    assert_eq!(staged(&nested).trim(), note);
+    assert!(staged(&repo).is_empty());
+
+    let local = nested.join("local.toml");
+    std::fs::write(&local, "").unwrap();
+    let explicit = gitmoji(&nested, &["--config", "local.toml", "staged"]);
+    assert!(explicit.status.success(), "{}", text(&explicit));
+    assert!(explicit.stderr.is_empty());
+
+    std::fs::write(&file, "").unwrap();
+    git(&linked, &["add", "-f", ".config/gitmoji.toml"]);
+    git(&linked, &["commit", "-qm", "policy"]);
+    assert!(staged(&nested).is_empty());
+    git(&linked, &["rm", "--cached", ".config/gitmoji.toml"]);
+    assert_eq!(staged(&nested).trim(), note);
+}

@@ -71,7 +71,7 @@ The range selects merge commits. Gitmoji recognizes its PR captions and GitHub's
 
 The pre-commit check (`gitmoji staged`) and commit-msg check read the settings staged for that commit. After `gitmoji init`, stage the generated settings to apply them. A staged policy change applies immediately, including on the first commit. You can keep editing the working copy without changing what either hook checks.
 
-Both hooks look for `gitmoji.toml`, then `.config/gitmoji.toml`, then the legacy `triangle.toml` at the worktree root. A staged deletion exposes the next file in this order. If none is staged or already tracked in the proposed commit, the built-in defaults apply. Gitmoji follows tracked links to files inside the proposed tree. Linked worktrees and path-limited commits use the index Git selected for that commit.
+Both hooks look for `gitmoji.toml`, then `.config/gitmoji.toml`, then the legacy `triangle.toml` at the worktree root. A staged deletion exposes the next file in this order. If none is staged or already tracked in the proposed commit, the built-in defaults apply. When a settings file exists only in the working tree, the hooks name it so you can stage it if intended. Gitmoji follows tracked links to files inside the proposed tree. Linked worktrees and path-limited commits use the index Git selected for that commit.
 
 For a local experiment, `gitmoji --config path/to/policy.toml staged` uses that file from disk. Checking text with `gitmoji check -m` or checking a separate draft also uses the working copy so you can try a policy before staging it.
 
