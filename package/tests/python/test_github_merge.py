@@ -70,6 +70,11 @@ class GitHubMergeTests(unittest.TestCase):
                 cls.state["requests"].append(("POST", payload))
                 self._json(200, {"data": {"repository": {"pullRequest": pr}}})
 
+            def do_GET(self):
+                assert self.path == "/api/v3/repos/team/project/pulls/42", self.path
+                cls.state["requests"].append(("GET", None))
+                self._json(cls.state["snapshot_http"], cls.state["snapshot"])
+
             def do_PUT(self):
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 payload = json.loads(self.rfile.read(length))
@@ -116,6 +121,10 @@ class GitHubMergeTests(unittest.TestCase):
         self.state["pr"] = self.pr
         self.state["on_recheck"] = {}
         self.state["requests"] = []
+        self.state["snapshot_http"] = 200
+        self.state["snapshot"] = dict(number=42, state="open", merged=False, draft=False,
+                                      head={"sha": self.head}, base={"sha": self.base},
+                                      mergeable=True, mergeable_state="blocked")
         self.state["merge_status"] = 200
         self.state["merged"] = {"merged": True, "sha": "c" * 40}
         self.state["expected_owner"] = "team"
@@ -320,7 +329,49 @@ class GitHubMergeTests(unittest.TestCase):
                 self.assertIn(hint, result.stderr)
                 self.assertNotIn("title length", result.stderr)
                 self.assertNotIn("outcome before retrying", result.stderr)
-                self.assertEqual([m for m, _ in self.state["requests"]], ["POST", "POST", "PUT"])
+                expected = ["POST", "POST", "PUT"] + (["GET"] if status == 405 else [])
+                self.assertEqual([m for m, _ in self.state["requests"]], expected)
+
+    def test_after_405_reports_current_state_with_one_read_and_no_second_put(self):
+        current = self.state["snapshot"]
+        for fields, message in [
+            ({"mergeable_state": "clean"}, "earlier refusal may have been temporary"),
+            ({"mergeable_state": "dirty", "mergeable": False}, "merge conflicts"),
+            ({"mergeable_state": "behind"}, "head branch is behind"),
+            ({"draft": True}, "is now a draft"),
+            ({"merged": True, "state": "closed"}, "is now merged"),
+            ({"state": "closed"}, "is now closed"),
+            ({"mergeable_state": "unknown", "mergeable": None}, "not confirmed mergeability"),
+            ({"mergeable_state": "blocked"}, "reports a blocked merge"),
+            ({"base": {"sha": self.base0}}, "base changed"),
+            ({"head": {"sha": self.head2}}, "head changed"),
+            ({"base": {"sha": self.base0}, "head": {"sha": self.head2}}, "base and head changed"),
+            ({"head": {"sha": "invalid"}}, "could not confirm the reviewed revisions"),
+            ({"head": {"sha": self.head2}, "mergeable_state": "clean"}, "fresh preview before submitting"),
+        ]:
+            with self.subTest(case=message):
+                _, _, apply = self.reviewed()
+                self.state.update(merge_status=405, merged={"message": "Pull Request is not mergeable"},
+                                  snapshot={**current, **fields})
+                result = self.run_cli(apply)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("HTTP 405", result.stderr)
+                self.assertIn(message, result.stderr)
+                if "head" in fields or "base" in fields:
+                    self.assertNotIn("may have been temporary", result.stderr)
+                self.assertEqual([m for m, _ in self.state["requests"]], ["POST", "POST", "PUT", "GET"])
+
+    def test_after_405_keeps_original_rejection_if_lookup_fails(self):
+        _, _, apply = self.reviewed()
+        self.state.update(merge_status=405, merged={"message": "Two approving reviews are required."},
+                          snapshot_http=503, snapshot={"message": "private-diagnostic"})
+        result = self.run_cli(apply)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("HTTP 405", result.stderr)
+        self.assertIn("Two approving reviews are required", result.stderr)
+        self.assertIn("follow-up PR lookup failed", result.stderr)
+        self.assertNotIn("private-diagnostic", result.stderr)
+        self.assertEqual([m for m, _ in self.state["requests"]], ["POST", "POST", "PUT", "GET"])
 
     def test_merge_rejection_does_not_print_arbitrary_host_text(self):
         for body in [
