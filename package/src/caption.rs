@@ -132,17 +132,39 @@ pub fn is_branch_message(message: &str, vocab: &Vocabulary) -> bool {
         .is_some_and(|(subject, body)| is_branch_caption(subject, body, vocab))
 }
 
+/// Whether a displayed branch label consists of Git refname characters.
+/// Parsing a caption still needs the merge state to establish its meaning.
+pub fn valid_branch_label(name: &str) -> bool {
+    !name.is_empty()
+        && !name
+            .chars()
+            .any(|c| c.is_control() || c.is_whitespace() || "~^:?*[\\".contains(c))
+}
+
+/// Read the source label from a possible branch-merge subject. A match is a
+/// display hint only: a subject by itself cannot establish commit ancestry.
+pub fn branch_sources<'a>(subject: &'a str, vocab: &Vocabulary) -> Option<&'a str> {
+    let (route, summary) = without_inventory(subject, vocab).split_once(": ")?;
+    let (sources, target) = route.split_once(" into ")?;
+    // The renderer quotes sources starting with Git's comment character and
+    // identifies a same-name source from FETCH_HEAD as "fetched <branch>".
+    let names = sources
+        .strip_prefix('\'')
+        .and_then(|s| s.strip_suffix('\''))
+        .unwrap_or(sources);
+    (valid_branch_label(target)
+        && !summary.trim().is_empty()
+        && names
+            .split(", ")
+            .all(|name| valid_branch_label(name.strip_prefix("fetched ").unwrap_or(name))))
+    .then_some(sources)
+}
+
 /// Recognize a branch caption from a stored subject and its separately read body.
 pub fn is_branch_caption(subject: &str, body: &str, vocab: &Vocabulary) -> bool {
-    let Some((route, summary)) = without_inventory(subject, vocab).split_once(": ") else {
+    let Some(sources) = branch_sources(subject, vocab) else {
         return false;
     };
-    let Some((sources, target)) = route.split_once(" into ") else {
-        return false;
-    };
-    if sources.is_empty() || target.is_empty() || summary.is_empty() {
-        return false;
-    }
     body.lines()
         .find(|line| !line.is_empty())
         .and_then(|line| line.strip_prefix("Arrived from "))

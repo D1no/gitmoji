@@ -317,6 +317,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     .with_context(|| format!("cannot read {}", file.display()))?,
                 (None, None) => bail!("give a message file, or --message"),
             };
+            if !from_file
+                && text.lines().count() == 1
+                && caption::branch_sources(text.trim_end(), &vocab).is_some()
+            {
+                eprintln!(
+                    "gitmoji: this looks like a branch merge caption. The subject alone cannot confirm the commit has multiple parents. Use `gitmoji explain --commit <sha>` to inspect this commit, or `gitmoji history <range>` to check stored commits."
+                );
+                return Ok(ExitCode::FAILURE);
+            }
             if fix {
                 let fixed = fix_message(&vocab, &config, &text);
                 for change in &fixed.changes {

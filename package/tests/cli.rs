@@ -754,3 +754,33 @@ fn branch_caption_uses_parents_and_body_even_when_it_names_an_arriving_pr() {
     );
     std::fs::remove_dir_all(repo).unwrap();
 }
+
+#[test]
+fn checking_a_merge_caption_as_text_asks_for_the_stored_commit() {
+    let repo = scratch("merge-caption-text");
+    // A permissive author policy must not turn a guessed integration into a success.
+    std::fs::write(repo.join("gitmoji.toml"), "[rules]\nuntagged = 'warn'\n").unwrap();
+    for subject in [
+        "[`🧩🐛`] trunk into topic: #42 Fix the shared value",
+        "[`🧩` / `✨🐛`] team/a, team/b into staging: 2 commits",
+        "fetched trunk into trunk: 2 commits",
+        "'#12-source' into topic: Legacy change",
+    ] {
+        let output = gitmoji(&repo, &["check", "-m", subject]);
+        let said = text(&output);
+        assert!(!output.status.success(), "{subject}");
+        assert!(said.contains("explain --commit <sha>"), "{said}");
+        assert!(said.contains("history <range>"), "{said}");
+        assert!(!said.contains("backticks"), "{said}");
+    }
+    for subject in [
+        "[WIP] a into b: maybe",
+        "[`🧩🐛`] Move two drafts into trunk: the plan",
+        "integrate into two branches: preview",
+        "🧩✨ #42 (app): move receipts into storage: retain a copy",
+    ] {
+        let output = gitmoji(&repo, &["check", "-m", subject]);
+        assert!(!text(&output).contains("explain --commit"), "{subject}");
+    }
+    std::fs::remove_dir_all(repo).unwrap();
+}
