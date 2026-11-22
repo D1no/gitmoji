@@ -4,6 +4,25 @@ One static binary, written in Rust, that checks commit messages and explains the
 vocabulary. Everything it knows about the convention comes from `vocabulary.toml`,
 which is compiled in.
 
+## Check an installation
+
+Run `gitmoji doctor` anywhere inside the project’s Git worktree. Use `gitmoji doctor --json` for setup scripts. Each object has five string fields. For example, this row reports the running binary in a project pinned to the same version:
+
+```json
+{"component":"binary","status":"ok","found":"0.18.0","expected":"0.18.0","remedy":""}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `component` | A stable name such as `binary`, `pin`, `hook:prepare-commit-msg`, `workflow:gitmoji-pr-title` or `skill`. Outside a working tree, the report contains a `repository` diagnostic. |
+| `status` | `ok` and `not-enrolled` allow exit 0. Any `missing`, `mismatch` or `stale` row yields exit 1. |
+| `found`, `expected` | The observed and expected state. Use the status for decisions and display these details to the user. |
+| `remedy` | A suggested repair for the user to review. Doctor never applies it. |
+
+Doctor checks Git’s effective hook paths, including the shared hook directory of a linked worktree and `core.hooksPath` overrides. For a Lefthook wrapper, it inspects the repository configuration for the corresponding command. It does not run hooks or contact a remote. Projects can use the ordinary Git hooks without installing Lefthook.
+
+A valid pin that selects a different release produces a `binary` mismatch. Install the pinned binary and rerun the check to compare managed file contents against that release. A project can use Gitmoji without enrolling in either managed GitHub workflow.
+
 ## Commands
 
 Run these in `package/`. CI checks formatting, lint and tests on Linux, macOS and

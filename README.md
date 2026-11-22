@@ -26,6 +26,10 @@ With a project path, it also installs the skill, settings and Git hooks. Run
 `./gitmoji/install.sh` by itself to install only the command. The CLI, skill
 and vocabulary use one release number. Run `gitmoji --version` to check it.
 
+### Check a project installation
+
+Run `gitmoji doctor` inside a checkout to check the active release, Git hooks, installed skill and enrolled workflows. For a session-start check, `gitmoji doctor --json` emits one array and exits with status 1 when a component needs attention. It works offline and leaves the checkout alone. [Diagnostic fields and examples](package/README.md#check-an-installation)
+
 ### Pin the CLI in CI
 
 On GitHub Actions, run `gitmoji init --github-workflows` in the project to install the PR commit check and title sync. Commit the generated workflows. On upgrade, change `[vocabulary].version` and rerun `gitmoji init` to refresh managed copies. [Workflow setup](skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles)
