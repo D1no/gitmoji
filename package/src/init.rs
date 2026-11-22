@@ -27,7 +27,7 @@ pub enum Tickets {
     Backlog,
 }
 
-const SKILL_DIR: &str = ".claude/skills/gitmoji";
+pub(super) const SKILL_DIR: &str = ".claude/skills/gitmoji";
 
 /// The reference inside the skill, written from the vocabulary so that it cannot differ
 /// from what the command says.
@@ -633,12 +633,21 @@ fn same_as_committed(top: &Path, file: &str) -> bool {
 }
 
 /// A directory shared across harnesses can have several names in the worktree.
-struct SkillPaths {
+pub(super) struct SkillPaths {
     root: PathBuf,
     staged_entries: HashSet<Vec<u8>>,
 }
 
 impl SkillPaths {
+    /// Inspection follows the same in-repository links without checking whether
+    /// writing through them would alter a staged decision.
+    pub(super) fn read_only(top: &Path) -> Result<Self> {
+        Ok(Self {
+            root: top.canonicalize()?,
+            staged_entries: HashSet::new(),
+        })
+    }
+
     fn new(top: &Path) -> Result<Self> {
         let listed = Command::new("git")
             .arg("-C")
@@ -665,7 +674,7 @@ impl SkillPaths {
     }
 
     /// Resolve existing links even when the leaf is missing or staged for deletion.
-    fn resolve(&self, name: &str) -> Result<String> {
+    pub(super) fn resolve(&self, name: &str) -> Result<String> {
         let mut path = self.root.clone();
         let mut parts = Path::new(name).iter().peekable();
         while let Some(part) = parts.next() {
@@ -924,6 +933,13 @@ fn make_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn skill_files(reference: &str) -> impl Iterator<Item = (&str, &str)> {
+    SKILL
+        .iter()
+        .copied()
+        .chain(std::iter::once((REFERENCE, reference)))
+}
+
 /// Write the skill. A file someone added stays; a shipped file someone changed is kept
 /// beside the new one as `<name>.before-update`.
 fn write_skill(
@@ -933,11 +949,7 @@ fn write_skill(
     changed: &mut Vec<String>,
 ) -> Result<()> {
     let reference = guide::all(vocab);
-    let files = SKILL
-        .iter()
-        .copied()
-        .chain(std::iter::once((REFERENCE, reference.as_str())));
-    for (name, content) in files {
+    for (name, content) in skill_files(&reference) {
         let path = paths.resolve(&format!("{SKILL_DIR}/{name}"))?;
         let to = top.join(&path);
         // What is staged is someone's work in progress, an edit or a deletion, and
@@ -977,15 +989,15 @@ fn write_skill(
     Ok(())
 }
 
-struct Workflow {
-    path: &'static str,
-    legacy_path: &'static str,
+pub(super) struct Workflow {
+    pub(super) path: &'static str,
+    pub(super) legacy_path: &'static str,
     legacy_job: &'static str,
-    job: &'static str,
-    template: &'static str,
+    pub(super) job: &'static str,
+    pub(super) template: &'static str,
 }
 
-const WORKFLOWS: &[Workflow] = &[
+pub(super) const WORKFLOWS: &[Workflow] = &[
     Workflow {
         path: ".github/workflows/gitmoji-pr-title.yml",
         legacy_path: ".github/workflows/pr-title.yml",
@@ -1001,8 +1013,8 @@ const WORKFLOWS: &[Workflow] = &[
         template: include_str!("../../.github/workflows/gitmoji-commits.yml"),
     },
 ];
-const WORKFLOW_MARKER: &str = "# Managed by gitmoji init --github-workflows";
-const WORKFLOW_PIN: &str = "  GITMOJI_VERSION: ";
+pub(super) const WORKFLOW_MARKER: &str = "# Managed by gitmoji init --github-workflows";
+pub(super) const WORKFLOW_PIN: &str = "  GITMOJI_VERSION: ";
 
 /// Parse a strict `major.minor.patch` release version without leading zeros.
 fn parse_release_version(version: &str) -> Option<(u64, u64, u64)> {
@@ -1058,7 +1070,7 @@ fn workflow_version(top: &Path) -> Result<String> {
 }
 
 /// Only the release pin varies between the shipped workflow and the installed copy.
-fn pin_workflow(template: &str, version: &str) -> String {
+pub(super) fn pin_workflow(template: &str, version: &str) -> String {
     let mut result = String::new();
     for line in template.lines() {
         if line.starts_with(WORKFLOW_PIN) {
@@ -1073,13 +1085,13 @@ fn pin_workflow(template: &str, version: &str) -> String {
 
 /// A workflow belongs to the installer only while it carries the ownership line.
 /// Links, directories and files without the line are always project-owned.
-enum WorkflowFile {
+pub(super) enum WorkflowFile {
     Missing,
     Managed(String),
     ProjectOwned,
 }
 
-fn workflow_file(path: &Path) -> Result<WorkflowFile> {
+pub(super) fn workflow_file(path: &Path) -> Result<WorkflowFile> {
     match path.symlink_metadata() {
         Ok(meta) if !meta.is_file() => return Ok(WorkflowFile::ProjectOwned),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
