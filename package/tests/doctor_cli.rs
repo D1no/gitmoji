@@ -18,6 +18,7 @@ struct Component {
     found: String,
     expected: String,
     remedy: String,
+    install: Option<String>,
 }
 
 struct Project {
@@ -94,9 +95,12 @@ impl Project {
             assert!(!row.component.is_empty());
             assert!(matches!(
                 row.status.as_str(),
-                "ok" | "not-enrolled" | "missing" | "mismatch" | "stale"
+                "ok" | "not-enrolled" | "missing" | "mismatch" | "stale" | "bypassed"
             ));
-            if matches!(row.status.as_str(), "missing" | "mismatch" | "stale") {
+            if matches!(
+                row.status.as_str(),
+                "missing" | "mismatch" | "stale" | "bypassed"
+            ) {
                 assert!(!row.expected.is_empty(), "{row:?}");
                 assert!(!row.remedy.is_empty(), "{row:?}");
             }
@@ -197,6 +201,11 @@ fn mismatched_pin_is_actionable_without_misreporting_old_release_templates() {
         .unwrap();
     }
     let report = project.report(&project.root, 1);
+    assert_eq!(report["binary"].expected, "0.0.1");
+    assert_eq!(
+        report["binary"].install.as_deref(),
+        Some("install.sh --pinned")
+    );
     assert!(
         ["binary", "pin"]
             .iter()

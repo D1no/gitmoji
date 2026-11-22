@@ -50,6 +50,8 @@ struct Row {
     found: String,
     expected: String,
     remedy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    install: Option<&'static str>,
 }
 
 impl Row {
@@ -66,6 +68,7 @@ impl Row {
             found: found.into(),
             expected: expected.into(),
             remedy: remedy.into(),
+            install: None,
         }
     }
 }
@@ -123,7 +126,10 @@ fn binary_row(binary: &str, pin: Option<&str>) -> Row {
             let remedy = format!(
                 "tool=$(mktemp -d) && git clone --quiet --depth 1 --branch v{pin} https://github.com/D1no/gitmoji.git \"$tool/source\" && \"$tool/source/install.sh\""
             );
-            Row::new("binary", Status::Mismatch, binary, pin, remedy)
+            Row {
+                install: Some("install.sh --pinned"),
+                ..Row::new("binary", Status::Mismatch, binary, pin, remedy)
+            }
         }
         _ => Row::new(
             "binary",
