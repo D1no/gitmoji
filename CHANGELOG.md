@@ -2,6 +2,11 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.20.1 (22 November 2026)
+
+- `gitmoji github-merge` now explains why a reviewed merge needs attention. HTTP 405 points to merge requirements, 409 calls for a fresh preview of the current PR head, and 422 points to merge validation. A dropped connection or an unconfirmed response gives the PR URL to inspect before trying again. The command sends the reviewed merge request once. [Direct PR merges](skills/gitmoji/references/pull-requests.md)
+- To upgrade, set `[vocabulary].version` to `"0.20.1"`, run the standalone installer with `--pinned`, then run `gitmoji init` and `gitmoji doctor` in the project.
+
 ## 0.20.0 (22 November 2026)
 
 - The pre-commit and commit-msg hooks now read the settings Git will commit. An unstaged policy edit cannot change the outcome of either hook. When adopting Gitmoji for the first time, stage the new settings to use them in that commit. Standalone message checks and an explicit `--config` still read from disk. [Staged project settings](package/README.md#choosing-policy-for-a-commit)

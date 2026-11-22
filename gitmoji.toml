@@ -22,4 +22,4 @@ ci = [".github/"]
 
 # The Gitmoji release this repository has adopted. Change it with a 🔺 commit.
 [vocabulary]
-version = "0.20.0"
+version = "0.20.1"
