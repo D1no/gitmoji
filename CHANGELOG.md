@@ -9,6 +9,7 @@ The CLI, skill, and bundled vocabulary share one release number.
 - `gitmoji pin` reads the adopted version from the project settings. The pinned installer bootstraps a checksum-verified reader on fresh machines. The release installer and shipped commands run without Python or uv.
 - To upgrade, install 0.17.0, update `[vocabulary].version`, and run `gitmoji init`. Commit the refreshed skill and managed workflows. Replace direct calls to the old Python helpers with the commands above. Init removes recognized released copies and preserves local customizations.
 - Setup suggestions attribute imported skill and workflow files to the release with a `Source:` line and show separate staging commands for local configuration changes.
+- If Gitmoji’s retired helpers were the repository’s only Python files, remove Python from the enabled languages in CodeQL and GitHub Code Quality. Keep it enabled wherever the repository still contains Python. [CodeQL language settings](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configure-code-scanning)
 
 ## 0.16.0 (22 November 2026)
 

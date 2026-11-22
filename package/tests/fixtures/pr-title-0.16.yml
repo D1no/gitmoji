@@ -1,0 +1,51 @@
+# Managed by gitmoji init --github-workflows
+name: Gitmoji PR title
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  GITMOJI_VERSION: '0.16.0'
+
+jobs:
+  gitmoji-pr-title:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: gitmoji-pr-title-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      # Only this public release supplies executable code. Never check out the PR.
+      - name: Install the trusted Gitmoji release
+        id: tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool=$(mktemp -d "$RUNNER_TEMP/gitmoji-title.XXXXXXXX")
+          mkdir "$tool/home"
+          clean=(env -i "PATH=$PATH" "HOME=$tool/home" GIT_CONFIG_NOSYSTEM=1
+            GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0)
+          "${clean[@]}" git init --quiet "$tool/source"
+          "${clean[@]}" git -C "$tool/source" -c credential.helper= fetch --quiet --depth=1 \
+            https://github.com/D1no/gitmoji.git "refs/tags/v$GITMOJI_VERSION"
+          "${clean[@]}" git -C "$tool/source" checkout --quiet --detach 'FETCH_HEAD^{commit}'
+          "${clean[@]}" GITMOJI_BIN="$tool/bin" "$tool/source/install.sh"
+          test "$("$tool/bin/gitmoji" --version)" = "gitmoji $GITMOJI_VERSION (gitmoji-triangle)"
+          echo "path=$tool" >> "$GITHUB_OUTPUT"
+
+      - name: Update the pull request title
+        shell: bash
+        env:
+          TITLE_TOOL: ${{ steps.tool.outputs.path }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITMOJI_TITLE_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I "$TITLE_TOOL/source/skills/gitmoji/scripts/github-pr-title.py" \
+            --pr "$PR_NUMBER" --gitmoji "$TITLE_TOOL/bin/gitmoji"
