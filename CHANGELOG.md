@@ -2,6 +2,12 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.18.0 (22 November 2026)
+
+- Run `gitmoji doctor` inside a checkout for a read-only, offline report on the running binary, project pin, effective Git hooks, installed skill and enrolled workflows. The report works from linked worktrees and supports plain Git and Lefthook. [Installation checks](package/README.md#check-an-installation)
+- Use `gitmoji doctor --json` in setup checks. The command emits a JSON array and exits with status 1 when a component needs attention. Projects can display the remedy for each failing component without parsing CLI prose.
+- Install 0.18.0 and update the project's version pin. Run `gitmoji init` to refresh the installed files, then `gitmoji doctor` to verify the installation.
+
 ## 0.17.1 (22 November 2026)
 
 - Refreshing Gitmoji’s unmodified 0.15.x and 0.16.0 title workflows no longer leaves a redundant `.before-update` file. Customized managed workflows still get a backup. Update the project pin and run `gitmoji init` to refresh the installed files. If 0.17.0 already created a backup, compare it with the version in Git before removing it.
