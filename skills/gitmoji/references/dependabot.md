@@ -15,13 +15,13 @@ End the prefix at the closing parenthesis. Dependabot appends the colon and spac
 
 ## Check a prefix before enabling it
 
-Run `gitmoji doctor` in the project to check its configured Dependabot prefixes. To try a Unicode prefix before editing the YAML, pair it with a sample summary and run the text check from the project root.
+Run `gitmoji doctor` in the project to check its configured Dependabot prefixes. To try a Unicode prefix before editing the YAML, pair it with a sample summary and run the text check from the project root. Replace `deps` with a scope allowed by the project.
 
 ```sh
 gitmoji check -m '🧑‍💻⬆ — (deps): Bump example from 1.0 to 1.1'
 ```
 
-A text-only check has no commit author. For a historical subject containing `:arrow_up:`, use `gitmoji history HEAD^..HEAD` on the fetched bot branch. The history reader can recognize Dependabot’s recorded upgrade spelling from the author on the Git object.
+A text-only check has no commit author. For a historical subject containing `:arrow_up:`, check out the fetched bot branch and run `gitmoji history BASE..HEAD`, replacing `BASE` with its target branch or base commit. The history reader can recognize Dependabot’s recorded upgrade spelling from the author on the Git object.
 
 ## Compare the raw commit and the PR title
 

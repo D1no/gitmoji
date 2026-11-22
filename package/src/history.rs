@@ -10,6 +10,7 @@
 //! none, was not checked against today's rules: it is not migrated.
 
 use std::borrow::Cow;
+use std::io::{self, Write};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
@@ -448,14 +449,29 @@ pub fn log(vocab: &Vocabulary, emoji: &str, range: Option<&str>) -> Result<ExitC
         return Ok(ExitCode::SUCCESS);
     }
     let listed = commits(range.unwrap_or("HEAD"), vocab)?;
-    for commit in listed.iter().rev().filter(|commit| !commit.is_merge) {
-        if let Some(heading) = caption::heading(commit.subject(), vocab)
-            && heading.symbols().any(|symbol| symbol == entry.emoji)
-        {
-            println!("{} {}", commit.short(), heading.display(commit.subject()));
-        }
+    if let Err(error) = write_log(&listed, &entry.emoji, vocab)
+        && error.kind() != io::ErrorKind::BrokenPipe
+    {
+        return Err(error).context("cannot write gitmoji log to stdout");
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn write_log(listed: &[Commit], emoji: &str, vocab: &Vocabulary) -> io::Result<()> {
+    let mut output = io::stdout().lock();
+    for commit in listed.iter().rev().filter(|commit| !commit.is_merge) {
+        if let Some(heading) = caption::heading(commit.subject(), vocab)
+            && heading.symbols().any(|symbol| symbol == emoji)
+        {
+            writeln!(
+                output,
+                "{} {}",
+                commit.short(),
+                heading.display(commit.subject())
+            )?;
+        }
+    }
+    output.flush()
 }
 
 /// Checks finished commits against today's rules and lists the ones that do not pass.

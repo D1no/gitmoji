@@ -484,3 +484,41 @@ fn dependabot_uses_the_preferred_file_and_warns_about_inactive_options() {
             .contains("dependabot.yaml updates[0]")
     );
 }
+
+#[test]
+fn doctor_explains_how_to_fix_the_file_or_the_configured_bot_prefix() {
+    let project = Project::new();
+    project.init(false);
+    let github = project.root.join(".github");
+    fs::create_dir_all(&github).unwrap();
+    let file = github.join("dependabot.yml");
+    fs::write(&file, "registries: [\n").unwrap();
+    let report = project.report(&github, 1);
+    let row = &report["dependabot:prefixes"];
+    assert!(row.expected.contains("readable Dependabot YAML file"));
+    assert!(row.remedy.contains(".github/dependabot.yml"));
+    fs::write(&file, "updates: [{commit-message: {prefix: 'build'}}]").unwrap();
+    let report = project.report(&github, 1);
+    let row = &report["dependabot:prefixes"];
+    assert!(row.found.contains("start the prefix with the emojis"));
+    assert!(!row.found.contains("#412"));
+    assert!(row.expected.contains("🧩⬆ — (deps)"));
+    assert!(row.remedy.contains("references/dependabot.md"));
+
+    fs::write(
+        &file,
+        "updates: [{commit-message: {prefix: '🧩⬆ — (deps)'}}]",
+    )
+    .unwrap();
+    assert_eq!(
+        project.report(&github, 0)["dependabot:prefixes"].found,
+        "checked 1 Dependabot heading"
+    );
+
+    let help = project.cli(&github, &["doctor", "--help"]);
+    assert!(help.status.success());
+    let help = String::from_utf8(help.stdout).unwrap();
+    for phrase in ["Dependabot prefixes", "Exit 0", "Exit 1"] {
+        assert!(help.contains(phrase), "{help}");
+    }
+}

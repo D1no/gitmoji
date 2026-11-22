@@ -1,6 +1,7 @@
 //! Read the policy and changed paths from the tree Git is about to commit.
 
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
@@ -81,6 +82,18 @@ pub(crate) fn config(tree: &str) -> Result<Config> {
             }
             _ => bail!("cannot resolve staged {path} to a file inside the repository"),
         }
+    }
+    // A missing policy in the proposed tree always selects defaults. Merely
+    // report a working copy if one exists, without opening or parsing it.
+    if let Ok(location) = git(&["rev-parse", "--is-inside-work-tree", "--show-cdup"])
+        && let Some(up) = location.strip_prefix("true\n")
+        && let Some(path) = SETTINGS_FILES
+            .into_iter()
+            .find(|path| Path::new(up.trim_end()).join(path).is_file())
+    {
+        eprintln!(
+            "gitmoji: using built-in defaults. Stage {path} to apply its settings to this commit."
+        );
     }
     Ok(Config::standard()?)
 }

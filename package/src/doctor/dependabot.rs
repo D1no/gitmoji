@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, anyhow, ensure};
 use gitmoji_triangle::config::Config;
-use gitmoji_triangle::subject::{self, Subject};
+use gitmoji_triangle::subject::{self, Subject, SubjectError};
 use gitmoji_triangle::vocabulary::Vocabulary;
 use serde::Deserialize;
 use serde_yaml_ng::{Mapping, Value};
@@ -63,58 +63,88 @@ fn read(top: &Path, file: &str) -> Result<Option<Dependabot>> {
 }
 
 pub(super) fn inspect(top: &Path, settings: Option<&Path>, vocab: &Vocabulary) -> Option<Row> {
-    let mut findings = Findings::default();
     // Dependabot stops at the first file it finds in this order.
     for file in [".github/dependabot.yml", ".github/dependabot.yaml"] {
-        match read(top, file) {
+        let doc = match read(top, file) {
             Ok(None) => continue,
-            Err(error) => findings.errors.push(error.to_string()),
-            Ok(Some(doc))
-                if doc
-                    .updates
-                    .iter()
-                    .chain(doc.groups.values())
-                    .all(|entry| entry.message.is_none()) => {}
-            Ok(Some(doc)) => match settings.map_or_else(Config::standard, Config::load) {
-                Ok(config) => findings.check_file(file, &doc, vocab, &config),
-                Err(_) => findings.errors.push(format!(
-                    "cannot check {file} with the current Gitmoji settings"
-                )),
-            },
+            Ok(Some(doc)) => doc,
+            Err(error) => {
+                return Some(Row::new(
+                    "dependabot:prefixes",
+                    Status::Mismatch,
+                    error.to_string(),
+                    "a readable Dependabot YAML file with an updates list",
+                    format!(
+                        "check {file} for YAML syntax and configuration errors, then rerun gitmoji doctor"
+                    ),
+                ));
+            }
+        };
+        let mut findings = Findings::default();
+        if doc
+            .updates
+            .iter()
+            .chain(doc.groups.values())
+            .all(|entry| entry.message.is_none())
+        {
+            return Some(findings.row("deps"));
         }
-        return Some(findings.row());
+        let config = match settings.map_or_else(Config::standard, Config::load) {
+            Ok(config) => config,
+            Err(_) => {
+                return Some(Row::new(
+                    "dependabot:prefixes",
+                    Status::Mismatch,
+                    format!("cannot check {file} with the current Gitmoji settings"),
+                    "readable Gitmoji project settings",
+                    "correct the Gitmoji settings file, then rerun gitmoji doctor",
+                ));
+            }
+        };
+        findings.check_file(file, &doc, vocab, &config);
+        let scope = config.scopes_allowed.first().map_or("deps", String::as_str);
+        return Some(findings.row(scope));
     }
     None
 }
 
 impl Findings {
-    fn row(self) -> Row {
-        let (status, found, expected, remedy) = if !self.errors.is_empty() {
-            (
+    fn row(self, example_scope: &str) -> Row {
+        let mut row = if !self.errors.is_empty() {
+            let example = format!("🧩⬆ — ({example_scope})");
+            Row::new(
+                "dependabot:prefixes",
                 Status::Mismatch,
                 self.errors.join("; "),
-                "a valid Gitmoji heading for each configured update prefix",
-                "edit the reported Dependabot configuration",
+                format!("a bot prefix such as {example}"),
+                format!(
+                    "edit the named commit-message field using an area and scope for your project. See {}/references/dependabot.md",
+                    crate::init::SKILL_DIR
+                ),
             )
         } else if self.checked == 0 {
-            (
+            Row::new(
+                "dependabot:prefixes",
                 Status::NotEnrolled,
-                "no explicit Dependabot commit prefix".into(),
+                "no explicit Dependabot commit prefix",
                 "",
                 "",
             )
         } else {
-            (
+            Row::new(
+                "dependabot:prefixes",
                 Status::Ok,
-                format!("checked {} Dependabot headings", self.checked),
+                if self.checked == 1 {
+                    "checked 1 Dependabot heading".into()
+                } else {
+                    format!("checked {} Dependabot headings", self.checked)
+                },
                 "",
                 "",
             )
         };
-        Row {
-            warnings: self.warnings,
-            ..Row::new("dependabot:prefixes", status, found, expected, remedy)
-        }
+        row.warnings = self.warnings;
+        row
     }
 
     fn check_file(&mut self, file: &str, doc: &Dependabot, vocab: &Vocabulary, config: &Config) {
@@ -285,6 +315,14 @@ impl Findings {
             Ok(Subject::Tagged { .. }) => {}
             Ok(_) => self.errors.push(format!(
                 "{field}: the prefix must describe an authored change"
+            )),
+            Err(SubjectError::NoEmojis { .. } | SubjectError::TicketFirst { .. }) => {
+                self.errors.push(format!(
+                    "{field}: start the prefix with the emojis for the dependency update"
+                ))
+            }
+            Err(SubjectError::Backticks { .. }) => self.errors.push(format!(
+                "{field}: remove the backticks around the prefix emojis"
             )),
             Err(error) => self.errors.push(format!("{field}: {error}")),
         }

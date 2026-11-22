@@ -514,6 +514,49 @@ fn stored_dependabot_upgrades_pass_checks_and_get_one_caption() {
 }
 
 #[test]
+fn log_exits_quietly_when_its_reader_has_closed_the_pipe() {
+    let repo = tempfile::tempdir().unwrap();
+    git(repo.path(), &["init", "-q"]);
+    git(
+        repo.path(),
+        &["commit", "--allow-empty", "-qm", "🔖 release fixture"],
+    );
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let result = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .args(["log", "🔖"])
+        .current_dir(repo.path())
+        .stdout(writer)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{}", text(&result));
+    assert!(result.stderr.is_empty());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn log_reports_a_write_failure_to_the_user() {
+    let repo = tempfile::tempdir().unwrap();
+    git(repo.path(), &["init", "-q"]);
+    git(
+        repo.path(),
+        &["commit", "--allow-empty", "-qm", "🔖 release fixture"],
+    );
+    let full = std::fs::File::options()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .args(["log", "🔖"])
+        .current_dir(repo.path())
+        .stdout(full)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(1), "{}", text(&result));
+    assert!(text(&result).contains("cannot write gitmoji log to stdout"));
+}
+
+#[test]
 fn log_finds_each_authored_slot_and_preserves_the_original_subjects() {
     let repo = tempfile::tempdir().unwrap();
     let here = repo.path();
@@ -1377,4 +1420,53 @@ fn directory_and_submodule_entries_do_not_hide_the_next_policy_file() {
         ],
     );
     assert_fallback();
+}
+
+#[test]
+fn default_policy_note_names_only_the_working_copy_in_the_current_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("repo");
+    let linked = dir.path().join("linked");
+    std::fs::create_dir(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "trunk"]);
+    git(&repo, &["commit", "-qm", "base", "--allow-empty"]);
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "topic",
+            linked.to_str().unwrap(),
+        ],
+    );
+    std::fs::create_dir(linked.join(".config")).unwrap();
+    let nested = linked.join("sub");
+    std::fs::create_dir(&nested).unwrap();
+    let staged = |dir| {
+        let result = gitmoji(dir, &["staged"]);
+        assert!(result.status.success(), "{}", text(&result));
+        String::from_utf8(result.stderr).unwrap()
+    };
+    assert!(staged(&nested).is_empty());
+    let file = linked.join(".config/gitmoji.toml");
+    std::fs::write(&file, b"\xff").unwrap();
+    std::fs::write(linked.join(".gitignore"), ".config/\n").unwrap();
+    let note = "gitmoji: using built-in defaults. Stage .config/gitmoji.toml to apply its settings to this commit.";
+    assert_eq!(staged(&nested).trim(), note);
+    assert!(staged(&repo).is_empty());
+
+    let local = nested.join("local.toml");
+    std::fs::write(&local, "").unwrap();
+    let explicit = gitmoji(&nested, &["--config", "local.toml", "staged"]);
+    assert!(explicit.status.success(), "{}", text(&explicit));
+    assert!(explicit.stderr.is_empty());
+
+    std::fs::write(&file, "").unwrap();
+    git(&linked, &["add", "-f", ".config/gitmoji.toml"]);
+    git(&linked, &["commit", "-qm", "policy"]);
+    assert!(staged(&nested).is_empty());
+    git(&linked, &["rm", "--cached", ".config/gitmoji.toml"]);
+    assert_eq!(staged(&nested).trim(), note);
 }
