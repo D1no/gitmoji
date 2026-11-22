@@ -282,22 +282,39 @@ fn commits(range: &str, vocab: &Vocabulary) -> Result<Vec<Commit>> {
     Ok(listed)
 }
 
-// A branch caption may quote a landed PR title ending in (#N); inspect the
-// local arrival body first. A bare trailing issue reference alone proves no PR.
-pub(crate) fn is_pr_merge(subject: &str, body: &str, vocab: &Vocabulary) -> bool {
+/// Read a landing's PR number and human title. Callers check the commit's
+/// parents. A local integration can quote a PR subject, including its suffix.
+pub(crate) fn pr_landing<'a>(
+    subject: &'a str,
+    body: &'a str,
+    vocab: &Vocabulary,
+) -> Option<(&'a str, &'a str)> {
     if caption::is_branch_caption(subject, body, vocab) {
-        return false;
+        return None;
     }
-    if subject.starts_with("Merge pull request #") || subject.starts_with("Merge #") {
-        return subject::is_generated(subject);
+    if let Some((number, source)) = subject
+        .strip_prefix("Merge pull request #")
+        .and_then(|rest| rest.split_once(" from "))
+        && subject::is_generated(subject)
+    {
+        let title = body
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or(source);
+        return Some((number, caption::without_inventory(title, vocab)));
+    }
+    if let Some((number, title)) = subject
+        .strip_prefix("Merge #")
+        .and_then(|rest| rest.split_once(' '))
+        && subject::is_generated(subject)
+    {
+        return Some((number, caption::without_inventory(title, vocab)));
     }
     let title = caption::without_inventory(subject, vocab);
-    let positive_suffix = title.rsplit_once(" (#").is_some_and(|(_, suffix)| {
-        suffix
-            .strip_suffix(')')
-            .and_then(|n| n.parse::<u64>().ok())
-            .is_some_and(|n| n > 0)
-    });
+    let (human, number) = title.strip_suffix(')')?.rsplit_once(" (#")?;
+    if !number.parse::<u64>().is_ok_and(|n| n > 0) {
+        return None;
+    }
     let mut routing = body.trim_start_matches(['\n', '\r']).lines();
     let routed = routing
         .next()
@@ -305,7 +322,12 @@ pub(crate) fn is_pr_merge(subject: &str, body: &str, vocab: &Vocabulary) -> bool
         && routing
             .next()
             .is_some_and(|line| line.starts_with("Base: "));
-    positive_suffix && (title != subject || routed)
+    let original = format!("Merge pull request #{number} from ");
+    let has_original = body.lines().any(|line| {
+        line.strip_prefix(&original)
+            .is_some_and(|source| !source.trim().is_empty())
+    });
+    (title != subject || routed || has_original).then_some((number, human))
 }
 
 fn standing(vocab: &Vocabulary, config: &Config, commit: &Commit) -> Standing {
@@ -314,7 +336,7 @@ fn standing(vocab: &Vocabulary, config: &Config, commit: &Commit) -> Standing {
             return Standing::BranchMerge;
         }
         let body = commit.message.split_once('\n').map_or("", |(_, body)| body);
-        if is_pr_merge(commit.subject(), body, vocab) {
+        if pr_landing(commit.subject(), body, vocab).is_some() {
             return Standing::PullRequestMerge;
         }
         return Standing::Merge;

@@ -35,6 +35,34 @@ cargo test --all-targets --locked
 cargo build --release --locked        # target/release/gitmoji
 ```
 
+## Draft release notes
+
+Run `gitmoji changelog v1.0.0..v1.1.0` in a complete Git checkout. For a first release, `gitmoji changelog v1.0.0` includes history from the root through that tag. Branches and commit IDs work too. The command writes Markdown to standard output and leaves the working tree unchanged. An empty draft means the range contains no qualifying PRs.
+
+For example, a PR changes the interface and its deployment. One of its commits marks a breaking change. The draft gives the release editor one line.
+
+```markdown
+## People-facing
+
+- **💥 Breaking** — Replace the old export dialog (#42; #35, #38) — also: 🧱
+```
+
+The default sections are **People-facing** (🎨), **System** (🧩 🛰️ 🗃️ 🧠), and **Behind the scenes** (🧱 👷 🧑‍💻 🤖), in that order. To replace them, add ordered groups to `gitmoji.toml`.
+
+```toml
+[[changelog.groups]]
+name = "For operators"
+areas = ["🧱", "👷"]
+
+[[changelog.groups]]
+name = "For users"
+areas = ["🎨", "🧩"]
+```
+
+A PR appears under the first group that matches an authored area. The line shows areas outside that group so an editor can split the story. PRs without a matching area appear under the reserved heading **Other changes**. The draft takes the PR number and human title from a recognized landing, then the tickets, areas and breaking flags from the arriving authored commits. It reads the complete headings even when the short PR inventory ends in an ellipsis. Tickets follow the project's configured patterns.
+
+The range selects merge commits. Gitmoji recognizes its PR captions and GitHub's default merge subjects. Local branch merges can carry PRs into a release. Each PR appears once, and a PR integrated inside another keeps its own tickets and breaking flags. Direct commits and squash or rebase histories lack the merge parents this draft uses. Release-marker commits (`🔖`) contribute no entry, and a PR containing only those markers is omitted. Review the draft before publishing to combine related work and describe the change for your readers.
+
 ## Reviewing untagged commits during adoption
 
 The hook normally rejects a missing intention. To allow ordinary prose while a team
