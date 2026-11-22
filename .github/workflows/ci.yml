@@ -131,7 +131,7 @@ jobs:
         working-directory: package
         run: cargo build --locked
 
-      - name: Test the installed skill helpers in disposable repositories
+      - name: Exercise the CLI and installer in disposable repositories
         run: |
           export PATH="$PWD/package/target/debug:$PATH"
           python3 -m unittest discover -s package/tests/python

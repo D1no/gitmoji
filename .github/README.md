@@ -15,7 +15,7 @@ Runs on every push to `trunk` and on every pull request.
 The [package guide](../package/README.md) and [website guide](../website/README.md)
 give the local checks for each area. From the repository root, run
 `python3 .github/scripts/pointers.py` to check documentation links. With the compiled command on PATH, run `python3 -m unittest discover -s package/tests/python`
-for the GitHub merge and history-upgrade helpers. To check commit
+for CLI and installer scenarios in disposable repositories. The test drivers use Python and OpenSSL. Projects using the released CLI only need Git for repository operations. To check commit
 history with this checkout's command, build it with `cargo build --locked` in
 `package/`, then run `package/target/debug/gitmoji history` from the root.
 
