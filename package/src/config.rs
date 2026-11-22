@@ -77,9 +77,27 @@ struct RawAgents {
     markers: Option<Vec<String>>,
 }
 
+/// An ordered release-notes audience with its Gitmoji area symbols.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Audience {
+    /// Markdown section heading.
+    pub name: String,
+    /// Authored area symbols belonging to the audience.
+    pub areas: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawChangelog {
+    groups: Option<Vec<Audience>>,
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
+    #[serde(default)]
+    changelog: RawChangelog,
     #[serde(default)]
     ticket: RawTicket,
     #[serde(default)]
@@ -99,6 +117,8 @@ struct RawConfig {
 /// The settings a check runs with.
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// Changelog sections in priority order. Omit to use the standard audience map.
+    pub changelog_groups: Option<Vec<Audience>>,
     ticket_patterns: Vec<Regex>,
     /// What a ticket looks like here, for messages: `#123`, `TASK-150`.
     pub ticket_example: String,
@@ -216,6 +236,7 @@ impl Config {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
+            changelog_groups: raw.changelog.groups,
             ticket_patterns,
             ticket_example: raw.ticket.example.unwrap_or_else(|| "#123".to_string()),
             scopes_allowed: raw.scope.allowed,

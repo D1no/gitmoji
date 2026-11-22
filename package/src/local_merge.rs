@@ -179,32 +179,10 @@ impl Arrival<'_> {
         let title = caption::without_inventory(self.subject, vocab);
         // A squash can retain the title's inventory and suffix while losing
         // the authored commits. Its title identifies the incoming PR only.
-        if (self.parents.split_whitespace().count() <= 1 && title == self.subject)
-            || !crate::history::is_pr_merge(self.subject, self.body, vocab)
-        {
+        if self.parents.split_whitespace().count() <= 1 && title == self.subject {
             return None;
         }
-        if let Some((number, from)) = self
-            .subject
-            .strip_prefix("Merge pull request #")
-            .and_then(|rest| rest.split_once(" from "))
-        {
-            let title = self
-                .body
-                .lines()
-                .find(|line| !line.trim().is_empty())
-                .unwrap_or(from);
-            return Some((number, caption::without_inventory(title, vocab)));
-        }
-        if let Some((number, title)) = self
-            .subject
-            .strip_prefix("Merge #")
-            .and_then(|rest| rest.split_once(' '))
-        {
-            return Some((number, caption::without_inventory(title, vocab)));
-        }
-        let (title, number) = trailing_reference(title)?;
-        Some((number, title))
+        crate::history::pr_landing(self.subject, self.body, vocab)
     }
 
     fn human_title(&self, vocab: &Vocabulary) -> String {

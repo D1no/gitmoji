@@ -14,6 +14,7 @@ use gitmoji_triangle::guide;
 use gitmoji_triangle::staged::Staged;
 use gitmoji_triangle::vocabulary::Vocabulary;
 
+mod changelog;
 mod doctor;
 mod history;
 mod hosting;
@@ -39,6 +40,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Action {
+    /// Draft Markdown release notes from the pull requests landed in a Git range.
+    Changelog {
+        /// Two revisions, e.g. v1.0.0..v1.1.0, or a single tip for the first release.
+        range: String,
+    },
     /// Check the installation in this working tree without changing it.
     Doctor {
         /// Print an array of component results for scripts.
@@ -385,6 +391,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
     config.keeps_comments = keeps_comments();
     match cli.command {
+        Action::Changelog { range } => {
+            print!("{}", changelog::render(&range, &config, &vocab)?);
+            Ok(ExitCode::SUCCESS)
+        }
         Action::Check { file, message, fix } => {
             let from_file = message.is_none();
             let mut branch_merge = false;

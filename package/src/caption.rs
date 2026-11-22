@@ -8,13 +8,18 @@ const PR_LIMIT: usize = 9;
 const MERGE_LIMIT: usize = 14;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct Heading<'v> {
-    area: Option<&'v str>,
-    activity: &'v str,
-    modifier: Option<&'v str>,
+/// Vocabulary symbols in an authored subject, independent of current project policy.
+pub struct Heading<'v> {
+    /// Canonical area symbol, when present.
+    pub area: Option<&'v str>,
+    /// Canonical activity or marker symbol.
+    pub activity: &'v str,
+    /// Canonical modifier symbol, when present.
+    pub modifier: Option<&'v str>,
 }
 
-fn heading<'v>(subject: &str, vocab: &'v Vocabulary) -> Option<Heading<'v>> {
+/// Read the leading symbols of a historical authored subject.
+pub fn heading<'v>(subject: &str, vocab: &'v Vocabulary) -> Option<Heading<'v>> {
     let cluster = subject.split_whitespace().next()?;
     if cluster.is_ascii() {
         return None;
