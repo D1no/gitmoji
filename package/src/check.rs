@@ -338,6 +338,7 @@ pub fn check_stored_message(
 #[derive(PartialEq)]
 enum MessageSource {
     Draft,
+    PendingMerge,
     Stored,
 }
 
@@ -660,7 +661,7 @@ pub fn check_branch_message(config: &Config, message: &str, stored: bool) -> Rep
     let source = if stored {
         MessageSource::Stored
     } else {
-        MessageSource::Draft
+        MessageSource::PendingMerge
     };
     check_signature(&mut report, config, closing(&body).signed, source, false);
     report
@@ -675,7 +676,7 @@ fn check_signature(
 ) {
     let signature_level = match config.signature {
         SignatureRule::Agents
-            if source == MessageSource::Draft && !is_marker && in_agent_session() =>
+            if source != MessageSource::Stored && !is_marker && in_agent_session() =>
         {
             Level::Error
         }
@@ -684,11 +685,12 @@ fn check_signature(
         SignatureRule::Error => Level::Error,
     };
     if signature_level != Level::Off && !signed {
-        report_at(
-            report,
-            signature_level,
-            "an agent signs the end of the body: an underscore on its own line, the model with its effort, the harness with its session, and where they apply lines for Sub-agents, Team and Research. Run `gitmoji signature` in the agent session and append its output. Run `gitmoji guide message`".to_string(),
-        );
+        let advice = if source == MessageSource::PendingMerge {
+            "this merge is already pending. To sign it, append the output of `gitmoji signature` to a copy of the prepared merge message and finish with `git commit --file=<signed-message>`. Follow the terminal signing recipe in the installed Gitmoji skill: references/pull-requests.md#signing-a-local-merge-from-an-agent-terminal. For future merges, use `git merge --no-commit <source>` to pause before signing."
+        } else {
+            "an agent signs the end of the body: an underscore on its own line, the model with its effort, the harness with its session, and where they apply lines for Sub-agents, Team and Research. Run `gitmoji signature` in the agent session and append its output. Run `gitmoji guide message`"
+        };
+        report_at(report, signature_level, advice.to_owned());
     }
 }
 

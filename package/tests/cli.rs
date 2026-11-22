@@ -126,6 +126,7 @@ fn agent_only_signatures_apply_to_live_authored_messages() {
     let session = Some(("CLAUDECODE", "1"));
     let unsigned = run(&["check", "--fix", "draft"], session);
     assert!(!unsigned.status.success() && text(&unsigned).contains("an agent signs"));
+    assert!(!text(&unsigned).contains("--no-commit"));
     let stamped = run(&["check", "draft"], session);
     assert!(!stamped.status.success() && text(&stamped).contains("an agent signs"));
 
@@ -243,6 +244,31 @@ fn check_should_preserve_only_the_current_worktrees_pending_merge_message() {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), message);
         let other_worktree = gitmoji(&repo, &["check", file.to_str().unwrap()]);
         assert!(!other_worktree.status.success());
+    }
+    std::fs::write(
+        worktree.join("gitmoji.toml"),
+        "[rules]\nsignature = 'error'\n",
+    )
+    .unwrap();
+    let caption =
+        "[`🧩✨`] main into review: Add previews\n\nArrived from main (1):\n- abc1234 Add previews";
+    for name in ["MERGE_MSG", "COMMIT_EDITMSG"] {
+        let file = git_dir.join(name);
+        std::fs::write(&file, caption).unwrap();
+        let unsigned = gitmoji(&worktree, &["check", "--fix", file.to_str().unwrap()]);
+        assert!(!unsigned.status.success(), "{}", text(&unsigned));
+        let diagnostic = text(&unsigned);
+        assert!(
+            diagnostic.contains("merge is already pending"),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.contains("git commit --file="), "{diagnostic}");
+        assert!(diagnostic.contains("For future merges"), "{diagnostic}");
+        assert!(diagnostic.contains("git merge --no-commit"), "{diagnostic}");
+        assert!(
+            !diagnostic.contains("gitmoji guide message"),
+            "{diagnostic}"
+        );
     }
     let draft = worktree.join("COMMIT_EDITMSG");
     std::fs::write(&draft, message).unwrap();
@@ -736,7 +762,7 @@ fn branch_caption_uses_parents_and_body_even_when_it_names_an_arriving_pr() {
     assert!(!unsigned.status.success(), "{}", text(&unsigned));
     assert!(text(&unsigned).contains("signing-a-local-merge-from-an-agent-terminal"));
     assert!(
-        text(&unsigned).contains("an agent signs"),
+        text(&unsigned).contains("gitmoji signature"),
         "{}",
         text(&unsigned)
     );
