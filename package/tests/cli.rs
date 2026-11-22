@@ -391,6 +391,22 @@ fn stored_dependabot_upgrades_pass_checks_and_get_one_caption() {
     git(here, &["commit", "--allow-empty", "-m", "base"]);
     let bot = "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>";
     for (stored, title, expected) in [
+        // A bare U+2B06 in the bot prefix preserves Unicode in the signed Git object.
+        (
+            "🧑‍💻⬆ — (deps): Bump two packages",
+            "🧑‍💻⬆ — (deps): Bump two packages",
+            "[`🧑‍💻⬆️`] Bump two packages",
+        ),
+        (
+            "👷⬆ — (ci): Bump one action",
+            "👷⬆️ — (ci): Bump one action in the release workflow",
+            "[`👷⬆️`] Bump one action in the release workflow",
+        ),
+        (
+            "🧩:arrow_up: — (deps): Bump ms",
+            "🧩⬆ — (deps): Bump ms",
+            "[`🧩⬆️`] Bump ms",
+        ),
         (
             "🧩:arrow_up: — (deps): Bump ms from 2.1.0 to 2.1.3",
             "🧩⬆️ — (deps): Bump ms from 2.1.0 to 2.1.3",
@@ -428,7 +444,16 @@ fn stored_dependabot_upgrades_pass_checks_and_get_one_caption() {
             );
             assert_eq!(text(&rendered).trim(), expected);
         }
+        let original = Command::new("git")
+            .args(["show", "-s", "--format=format:%s", "HEAD"])
+            .current_dir(here)
+            .output()
+            .unwrap();
+        assert!(original.status.success());
+        assert_eq!(original.stdout, stored.as_bytes());
     }
+    let bare = gitmoji(here, &["check", "-m", "👷⬆ — (ci): Bump one action"]);
+    assert!(bare.status.success(), "{}", text(&bare));
     let raw = ":construction_worker::arrow_up: — (ci): Bump the actions group with 2 updates";
     let edited = gitmoji(
         here,

@@ -18,7 +18,7 @@ use gitmoji_triangle::caption;
 use gitmoji_triangle::check::{check_branch_message, check_stored_message, checked_against};
 use gitmoji_triangle::config::{Config, Level};
 use gitmoji_triangle::subject;
-use gitmoji_triangle::vocabulary::{Slot, Vocabulary};
+use gitmoji_triangle::vocabulary::{Slot, Vocabulary, normalize};
 
 /// One commit as git stores it.
 struct Commit {
@@ -137,6 +137,17 @@ pub struct IncomingCommits {
     dependabot_subjects: Vec<usize>,
 }
 
+// The bot's authored tags and the editable PR title can use different
+// presentation selectors. Keep the job separator and scope literal.
+fn same_job_heading(stored: &str, title: &str) -> bool {
+    match (stored.split_once(" — ("), title.split_once(" — (")) {
+        (Some((stored_tags, stored_scope)), Some((title_tags, title_scope))) => {
+            stored_scope == title_scope && normalize(stored_tags) == normalize(title_tags)
+        }
+        _ => false,
+    }
+}
+
 impl IncomingCommits {
     /// A default Dependabot PR title repeats the authored heading. Keep its description once.
     pub(crate) fn summarize_pr(
@@ -155,7 +166,7 @@ impl IncomingCommits {
                     .any(|&index| {
                         self.subjects[index]
                             .split_once("): ")
-                            .is_some_and(|(bot, _)| bot == heading)
+                            .is_some_and(|(bot, _)| same_job_heading(bot, heading))
                     })
                     .then_some(summary)
             })
