@@ -39,6 +39,8 @@ GITMOJI_BIN="$tool/bin" "$tool/source/install.sh" --pinned
 "$tool/bin/gitmoji" --version
 ```
 
+When contributor branches merge, the local Git hook names the incoming branch, its destination and the intentions in the arriving commits. [Local branch merges](skills/gitmoji/references/pull-requests.md#local-branch-merges)
+
 ## Pull request titles
 
 An open pull request can show the intentions of its commits before you read the diff:

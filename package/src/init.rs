@@ -87,6 +87,7 @@ const EARLIER_SKILL_FILES: &[&str] = &[
 const SETTINGS_GITHUB: &str = include_str!("../examples/gitmoji.github.toml");
 const SETTINGS_BACKLOG: &str = include_str!("../examples/gitmoji.backlog.toml");
 const LEFTHOOK: &str = include_str!("../examples/lefthook.yml");
+const PREVIOUS_LEFTHOOK: &str = include_str!("legacy/lefthook-0.15.yml");
 const LEFTHOOK_FILES: &[&str] = &[
     "lefthook.yml",
     "lefthook.yaml",
@@ -114,6 +115,7 @@ fn settings_home(top: &Path) -> &'static str {
 
 const COMMIT_MSG_HOOK: &str =
     "#!/bin/sh\n# Gitmoji Triangle: check the commit message.\nexec gitmoji check --fix \"$1\"\n";
+const PREPARE_COMMIT_MSG_HOOK: &str = "#!/bin/sh\n# Gitmoji Triangle: describe the work arriving through a branch merge.\nexec gitmoji merge-message \"$1\" \"${2:-}\"\n";
 const PRE_COMMIT_HOOK: &str = "#!/bin/sh\n# Gitmoji Triangle: say when the staged files look like more than one commit.\nexec gitmoji staged\n";
 
 /// Names from before tool 0.7.0, when the command was called `triangle`.
@@ -355,7 +357,8 @@ fn leftovers(top: &Path) -> Result<Vec<String>> {
         .iter()
         .map(|name| (name.to_string(), top.join(name)))
         .chain(hooks.into_iter().flat_map(|folder| {
-            ["commit-msg", "pre-commit"].map(|hook| (format!("the {hook} hook"), folder.join(hook)))
+            ["commit-msg", "pre-commit", "prepare-commit-msg"]
+                .map(|hook| (format!("the {hook} hook"), folder.join(hook)))
         }));
     for (name, path) in places {
         let text = read_if_present(&path)?.unwrap_or_default();
@@ -1057,20 +1060,40 @@ fn write_hooks(top: &Path, changed: &mut Vec<String>) -> Result<bool> {
     let plain = [
         ("commit-msg", COMMIT_MSG_HOOK, "gitmoji check --fix \"$1\""),
         ("pre-commit", PRE_COMMIT_HOOK, "gitmoji staged"),
+        (
+            "prepare-commit-msg",
+            PREPARE_COMMIT_MSG_HOOK,
+            r#"gitmoji merge-message "$1" "${2:-}""#,
+        ),
     ];
     let existing = LEFTHOOK_FILES
         .iter()
         .copied()
         .find(|name| top.join(name).exists());
     if let Some(name) = existing {
-        let text = read_if_present(&top.join(name))?.unwrap_or_default();
-        if !gitmoji_commands(&text).any(|words| words.contains(&"check")) {
+        let path = top.join(name);
+        let text = read_if_present(&path)?.unwrap_or_default();
+        if text == PREVIOUS_LEFTHOOK {
+            write(&path, LEFTHOOK)?;
+            changed.push(name.to_string());
+            println!("   added prepare-commit-msg to {name}");
+        } else if !gitmoji_commands(&text).any(|words| words.contains(&"check")) {
             println!("   {name} exists without the gitmoji commands; left as it is.");
             println!("   Add these to it, then run `lefthook install`:");
             for line in LEFTHOOK.lines().filter(|line| !line.starts_with('#')) {
                 println!("     {line}");
             }
             return Ok(false);
+        } else if !gitmoji_commands(&text).any(|words| words.contains(&"merge-message")) {
+            println!(
+                "   {name} is project-managed. Add this command under prepare-commit-msg, then run `lefthook install`:"
+            );
+            for line in LEFTHOOK
+                .lines()
+                .skip_while(|line| *line != "prepare-commit-msg:")
+            {
+                println!("     {line}");
+            }
         }
     }
     let lefthook = Command::new("lefthook").arg("version").output().is_ok();
@@ -1260,6 +1283,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
         std::fs::create_dir_all(&folder).unwrap();
         folder
+    }
+
+    #[test]
+    fn merge_hook_upgrades_the_generated_template_and_preserves_project_commands() {
+        let top = scratch("upgrade-merge-hook");
+        git(&top, &["init", "-q"]).unwrap();
+        let config = top.join("lefthook.yml");
+        write(&config, PREVIOUS_LEFTHOOK).unwrap();
+        let mut changed = Vec::new();
+        write_hooks(&top, &mut changed).unwrap();
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), LEFTHOOK);
+        assert_eq!(changed, ["lefthook.yml"]);
+
+        changed.clear();
+        write_hooks(&top, &mut changed).unwrap();
+        assert!(changed.is_empty());
+
+        let custom = format!("{PREVIOUS_LEFTHOOK}# This project also runs its own checks.\n");
+        write(&config, &custom).unwrap();
+        write_hooks(&top, &mut changed).unwrap();
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), custom);
+        assert!(changed.is_empty());
+        std::fs::remove_dir_all(top).unwrap();
     }
 
     #[test]

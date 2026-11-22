@@ -38,7 +38,7 @@ The workflow uses the current base, head and human title when the PR opens, reop
 [`🧱🎨`… / `🔧✨📝🛂♻️`…] Roll out previews across environments
 ```
 
-A single distinct heading stays together. With mixed headings, areas appear on the left and activities, modifiers and markers on the right, in order of first appearance. Repeated symbols use one slot. Three areas fit in full. At four or more, the first two and an ellipsis appear. The complete inventory uses up to nine visible symbols, including ellipses. If no incoming commit carries a recognized heading, the human title stands alone. Labels such as `[WIP]` remain part of the human title. A trailing reference to this same PR is removed before formatting so the merge gets one number. References to other PRs stay in place.
+A single distinct heading stays together. With mixed headings, areas appear on the left and activities, modifiers and markers on the right, in order of first appearance. Repeated symbols use one slot. Three areas fit in full. At four or more, the first two and an ellipsis appear. An ordinary PR shows up to nine visible symbols, counting ellipses. A PR that introduces a merge commit shows up to fourteen. A merge already reachable from the base uses no extra space. If no incoming commit carries a recognized heading, the human title stands alone. Labels such as `[WIP]` remain part of the human title. A trailing reference to this same PR is removed before formatting so the merge gets one number. References to other PRs stay in place.
 
 From a full local clone, supply the target revision first and the source revision second.
 
@@ -49,6 +49,47 @@ gitmoji merge-caption --pr 42 --title 'Give reviewers a working preview' origin/
 The text output is the live PR title. With `--json`, `title` is that same string, `subject` is the proposed merge subject with the trailing PR number, and `recognized` and `total` report coverage. For an existing merge `M`, use `M^1 M^2`. A nested merge contributes its newly reachable authored commits once.
 
 A PR that rolls back earlier work carries its own integrating number at the end, for example `(#42)`. A verified standalone undo inside it can name the earlier PR with `Revert #17 …`. See the [history upgrade guide](upgrade-history.md).
+
+## Local branch merges
+
+Branches can merge entirely on one machine. Both names and their incoming intentions come from Git, so the merge needs neither a remote nor a PR number. For example, if a search branch brings a new feature into an integration branch, its local merge subject can read:
+
+```text
+[`🧩✨`] search into integration: offer saved searches
+```
+
+`gitmoji init` installs the prepare-commit-msg hook. Update the CLI and the project’s version pin first. Re-run init in each clone with plain Git hooks. For a project-maintained Lefthook configuration, add the following command alongside any existing prepare-commit-msg commands, commit the configuration, and run `lefthook install` in each clone. Gitmoji refreshes its own previous unmodified template automatically.
+
+```yaml
+prepare-commit-msg:
+  commands:
+    gitmoji-merge-message:
+      run: gitmoji merge-message "{1}" "{2}"
+```
+
+Fetch the base and merge it locally. Gitmoji reads Git’s pending merge parents, totals the newly arriving authored intentions across all of them and uses up to fourteen symbols. A shared ancestor counts once. A branch with no recognized tags still gets a direction and summary. A fast-forward creates no merge commit. A custom subject stays as written. Git supplies identical hook inputs if someone explicitly types its exact generated subject; use `git merge --no-commit` followed by `git commit -m '…'` to preserve a deliberately composed message in that case.
+
+The body lists up to twenty incoming first-parent entries, newest first. Where available, it retains the paths in Git’s conflict notice. A local subject can read `trunk into search: #42 Show saved searches`. The reference at the front of the incoming title names the earlier PR. Its original heading, including any trailing `(#42)`, stays in the body. A later PR landing gets its own number at the end. One distinct incoming emoji pair stays together as `🧩✨`; multiple distinct headings use the two groups.
+
+### Signing a local merge from an agent terminal
+
+For an interactive merge, use `git merge --edit origin/<base>` and append the signature in the editor. In a terminal without an editor, start with `git merge --no-commit origin/<base>`. A fast-forward completes immediately. If there are conflicts, resolve and stage them first. Once a merge commit is pending, run the following from the repository root. Choose the script for the harness actually making the commit (`codex.py`, `claude-code.py` or `antigravity.py`). The example uses the installed skill's default path.
+
+```sh
+(
+  set -eu
+  pending=$(git rev-parse --git-path MERGE_MSG)
+  signed=$(mktemp)
+  trap 'rm -f "$signed"' EXIT
+  gitmoji merge-message "$pending" merge
+  git stripspace --strip-comments < "$pending" > "$signed"
+  printf '\n' >> "$signed"
+  python3 .claude/skills/gitmoji/scripts/codex.py >> "$signed"
+  git commit --file="$signed"
+)
+```
+
+The commit-msg hook checks and stamps the supplied signature. Use `gitmoji history BASE..HEAD` to check a range or `gitmoji explain --commit HEAD` to identify a particular merge. A subject string alone cannot establish its parentage. GitHub's **Update branch** button cannot run this local hook. Use the [history upgrade preview](upgrade-history.md) for recorded integrations. Its `--local-merges-only` mode works offline.
 
 ## When the merge button is unavailable
 

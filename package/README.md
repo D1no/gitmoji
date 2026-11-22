@@ -51,7 +51,7 @@ During `gitmoji check <file>` and `check --fix <file>`, ordinary commits from
 Claude Code, Codex and Antigravity must include the model and harness lines.
 The checker accepts a signature under either the draft underscore or the
 stamped version line. A person's commit can have the version line alone.
-Release and adoption markers and Git-generated messages pass without signatures.
+Generated branch captions follow the project’s signature rule while the merge is pending. Release and adoption markers and other Git-generated messages pass without signatures.
 
 Detection uses `CLAUDECODE=1` or a nonempty `CLAUDE_CODE_SESSION_ID`,
 `CLAUDE_CODE_ENTRYPOINT`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID` or
@@ -74,6 +74,8 @@ not change the inventory.
 Use the [GitHub workflow](../skills/gitmoji/references/pull-requests.md) for
 the subject and original branch information together. For an existing
 repository, see [upgrading history](../skills/gitmoji/references/upgrade-history.md).
+
+`gitmoji merge-message <message-file> [source]` is the prepare-commit-msg entry point for local branch merges. `gitmoji explain --commit HEAD` reads the stored parents and message to identify a local caption. [Branch merge setup and examples](../skills/gitmoji/references/pull-requests.md#local-branch-merges)
 
 ## Where things are
 

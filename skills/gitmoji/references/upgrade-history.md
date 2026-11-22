@@ -1,25 +1,44 @@
 # Reviewing existing merge and revert history
 
-Run the history upgrade script from a full clone of the project whose history you want to review. Use Python 3.9 or newer, Git, an installed `gitmoji` with the `merge-caption` command, and an authenticated `gh` with GraphQL pagination and `--slurp` support. The GitHub account needs read access to the repository and its pull requests. Pass `--hostname HOST` for an enterprise host, or set `GH_HOST`. The example paths below use the skill installed by `gitmoji init`.
+Run the history upgrade from the project whose history you want to review. Both modes need Python 3.9 or newer, a complete local Git object history and an installed `gitmoji` with the `merge-caption` and `merge-message --historical` commands. The example paths use the skill installed by `gitmoji init`.
 
-## Preview
+## Unpublished branches and offline repositories
+
+Use `--local-merges-only` to repair branch integrations entirely from Git objects on disk. A remote, a pull request and the GitHub CLI are optional for repositories using this mode. The tool reads the source and destination from Git's recorded merge heading and collects the incoming commits from its parents. Deleted branch refs are supported. An omitted destination appears for manual review. PR landing messages, reverts and authored commits keep their text.
+
+```sh
+tool=.claude/skills/gitmoji/scripts/gitmoji-upgrade-history.py
+python3 "$tool" --local-merges-only --ref HEAD > local-plan.json
+python3 "$tool" --local-merges-only --ref ORIGINAL_TIP_SHA \
+  --expect-candidate REVIEWED_CANDIDATE_SHA --apply review/local-merges
+git diff --exit-code ORIGINAL_TIP_SHA review/local-merges
+git log --graph --format='%h %s' review/local-merges
+```
+
+Use the `source_tip` and `candidate_tip` from the preview in the second command. The candidate is a new local branch. The original branch and working tree stay available for comparison. If an incoming commit is rewritten, its row in a previously captioned local merge is refreshed in the candidate.
+
+## Preview GitHub PRs, reverts and branch merges
+
+For `--repo OWNER/REPO`, supply an authenticated `gh` with GraphQL pagination and `--slurp` support and read access to the repository's pull requests. Pass `--hostname HOST` for an enterprise host, or set `GH_HOST`.
 
 ```sh
 python3 .claude/skills/gitmoji/scripts/gitmoji-upgrade-history.py \
   --repo OWNER/REPO --ref trunk > history-plan.json
 ```
 
-The default run reads Git objects and the repository’s merged PRs. The JSON report includes the original tip, proposed candidate tip, old and proposed commit IDs, new subjects, decisions needing review and signatures that would become invalid. Use `--base <commit>` to exclude a verified ancestor and all its ancestors from the upgrade. Choose a path outside the checkout for the report if you want to keep the working directory clean.
+The hosted preview reads Git objects and the repository’s merged PRs. The JSON report includes the original tip, proposed candidate tip, old and proposed commit IDs, new subjects, decisions needing review and signatures that would become invalid. Use `--base <commit>` to exclude a verified ancestor and all its ancestors from the upgrade. Choose a path outside the checkout for the report if you want to keep the working directory clean.
 
-Review these decisions against the linked PRs:
+Review each proposed caption against its incoming history and any linked PR.
 
 - An exact match between a two-parent merge and a single merged PR’s recorded merge ID identifies the landing. The tool rebuilds the emoji inventory from the incoming commits. It preserves the original message and records the original commit ID and available branch names in a changed commit’s body.
 - An earlier history rewrite can change every merge ID. For a stored caption such as <code>Merge #42 [`🎨✨`] Show preview</code>, the tool also checks the merged PR in the selected repository, the human wording and the inventory recomputed from both parents. The source history must have a single merge claiming that caption. When the original landing object is available, Gitmoji compares the result tree and both parent trees in their original order. All three commit IDs can change. A rewrite may also change every snapshot, for example by adding the same unrelated file throughout history. In that case, Gitmoji checks the complete change from each parent to the merge, including paths, modes and blob IDs. At least one side must change, and the merge and its two parents must retain their corresponding Git author identities and dates. Missing evidence or disagreement goes to review. A qualifying merge becomes <code>[`🎨✨`] Show preview (#42)</code>. Repeated trailing references to the integrating PR collapse to one.
+- Branch merges whose stored Git heading identifies the source and destination can be captioned from their ordered parents, even after the branches have been deleted. For example, `Merge remote-tracking branch 'origin/layout' into prototype` can become <code>[`🎨✨`] layout into prototype: open the preview</code>. The caption allows up to fourteen symbols. Its body lists the incoming first-parent commits and keeps the original commit ID and message, including any surviving conflict notes or trailers. When an arriving commit also gets rewritten, its inventory entry uses the full candidate commit ID and new subject so it remains reachable after publication. This also refreshes the affected rows of previously captioned branch merges. The preview marks them with `inventory_updated`. Their existing subject, conflict record and author notes are preserved. The upgrade cannot recover conflict paths Git discarded. An arriving PR is shown as `#42 Open the preview` in a new branch summary. The landing commit retains `Open the preview (#42)`. An earlier branch summary that ends with `(#42)` and records its arrivals also keeps its wording. Only the verified landing can update the hosted PR title.
+- A PR integrating a branch that contains a newly arriving merge can gain a longer inventory. A verified older nine-slot caption can expand to fourteen using the original authored commits. Ordinary PRs retain the nine-slot inventory.
 - A merge that lands a rollback PR carries the integrating PR number at the end. Its individual undo commit can qualify separately. For example, when PR #31 rolls back PR #27, its integration row ends in `(#31)`. A proven undo inside it reads `Revert #27 …`, with `Introduced by PR #31.` in the body when GitHub associates that commit uniquely and confirms it appears in the PR.
 - An undo candidate needs a recognizable operation subject and one full Git revert target ID in its parent history. To prove the undo, the tool compares the complete inverse against the actual change using original Git trees. Every changed path, file mode and pair of blob IDs must match. An undo of a merge also needs Git’s first-parent mainline record. These checks apply at every step of a revert chain. Reverting the verified merge of PR #27 yields `Revert #27` followed by the target PR’s caption. Reverting that exact undo yields `Reapply #27`.
 - Intervening changes to other files can coexist with an exact undo. An edit elsewhere in the same affected file changes its blob ID and requires review, even when Git reversed the intended lines cleanly. Partial rollbacks, additional files, empty changes and unproved conflict resolutions also require review. A squash that both reverts a change and adds a feature keeps its original subject. A recorded one-parent PR landing always goes to review because it may be a squash or a rebase.
 - For an undo of an individual authored commit, GitHub must associate the target with a unique merged PR and list the target on that PR. The original target subject describes what was undone, for example `Revert #27 🎨✨ #19 (preview): open the preview in a new tab`. The first number identifies the affected PR. The second belongs to the original subject. An undo of an exact one-parent landing names the target as that PR’s landing commit. The tool respects the target commit’s declared text encoding and sends unreadable or empty target subjects to review.
-- Branch syncs, ambiguous PR links, and subjects such as `Rewind #27` without a provable inverse appear for review. The candidate keeps the original message for those entries. Keep the report alongside the source history when investigating them.
+- Branch merges whose stored heading omits the destination, custom headings without a verified PR, ambiguous PR links, and subjects such as `Rewind #27` without a provable inverse appear for review. The candidate keeps the original message for those entries. Keep the report alongside the source history when investigating them.
 - A commit whose parent changes acquires a new ID even if its entire message stays the same. Each rewritten commit retains its tree, parent order, author and committer identities and timestamps. The report maps the old and new IDs. GitHub’s existing PR records, checks, URLs, and other external references still refer to the original history. Keep an accessible copy of that history.
 
 ## Build and inspect the candidate
@@ -66,7 +85,7 @@ Read `pr_title_summary` before interpreting an empty update list. The counts cov
 | --- | --- |
 | `to_change` | Verified landings whose hosted PR title would change |
 | `already_correct` | Verified landings whose hosted PR already has the proposed title |
-| `unmatched` | Local merge commits and recorded one-parent PR landings that need review; this can include branch syncs with no PR |
+| `unmatched` | Merges with unresolved identity or direction, and recorded one-parent PR landings requiring review. A recognized local branch merge is excluded from all three counts |
 
 For example, `{"to_change": 0, "already_correct": 12, "unmatched": 3}` means twelve hosted titles were verified. The three unresolved landings have review reasons in `review_or_changed_commits`. When an original merge is available but the trees differ, the reason names the original SHA and the evidence that failed.
 
