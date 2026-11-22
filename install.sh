@@ -1,132 +1,61 @@
 #!/bin/sh
-# Install the `gitmoji` command and set a git repository up for Gitmoji Triangle.
-#
-#   ./install.sh [--overwrite] [path to the repository] [github|backlog]
-#   ./install.sh --pinned  (from a project checkout; installs only its adopted CLI)
-#
-# Needs git and curl: the command is one prebuilt file, downloaded from the GitHub release
-# that matches this clone and checked against the release's checksums.
-# Without a path it only installs the command.
-# If another tool called gitmoji is already installed (gitmoji-cli, for example), this
-# asks before replacing it. --overwrite, or GITMOJI_OVERWRITE=1, answers yes in advance;
-# GITMOJI_OVERWRITE set to anything else answers no.
-# Set GITMOJI_BIN to choose the folder the command is copied to.
+# Install the Gitmoji Triangle CLI. A release download is a standalone installer.
 set -eu
 
-here=$(cd "$(dirname "$0")" && pwd)
-if [ "${1:-}" = --pinned ]; then
-  if [ "$#" != 1 ]; then
-    echo "Usage: install.sh --pinned (run from the project checkout)" >&2
-    exit 2
-  fi
-  # A single folder for everything this run fetches, removed however the run ends.
-  work=$(mktemp -d "${TMPDIR:-/tmp}/gitmoji-pinned.XXXXXX")
-  trap 'rm -rf "$work"' EXIT
-  trap 'exit 1' INT TERM
+# Filled in when this script is packaged as a release asset.
+installer_release=''
+usage() {
+  cat <<'USAGE'
+Usage: install.sh [--overwrite] [path to the repository] [github|backlog]
+       install.sh --pinned [--overwrite]
+Run --pinned from a project to install the CLI release in its Gitmoji settings.
+With a repository path, install the CLI and run gitmoji init. With no arguments,
+install the release of this script. Set GITMOJI_BIN to choose the destination.
+USAGE
+}
 
-  # The release a project has adopted is `[vocabulary].version` in its settings, and only
-  # the command reads those: `gitmoji pin` prints the adopted release or says why it
-  # cannot. Use a gitmoji that is already installed when it is ours and knows `pin`.
-  reader=
-  found=$(command -v gitmoji 2>/dev/null || true)
-  if [ -n "$found" ] && [ -f "$found" ]; then
-    case "$("$found" --version 2>/dev/null </dev/null || true)" in
-      *gitmoji-triangle*)
-        if "$found" pin --help >/dev/null 2>&1 </dev/null; then
-          reader=$found
-        fi
-        ;;
-    esac
-  fi
-  if [ -z "$reader" ]; then
-    # None at hand, as on a fresh CI machine. Get this checkout's own command the way
-    # the installer always does, checksum included, into this run's folder: nothing on
-    # the machine changes, and the folder is gone when the run ends. Another tool called
-    # gitmoji may stay where it is, so the question about replacing it is answered here.
-    if ! GITMOJI_BIN="$work/bin" GITMOJI_OVERWRITE=1 "$here/install.sh" >"$work/reader.log" 2>&1; then
-      cat "$work/reader.log" >&2
-      echo "Could not get a gitmoji to read the project's adopted release with." >&2
-      exit 1
-    fi
-    for name in gitmoji gitmoji.exe; do
-      if [ -f "$work/bin/$name" ]; then
-        reader="$work/bin/$name"
-      fi
-    done
-    if [ -z "$reader" ] || ! "$reader" pin --help >/dev/null 2>&1 </dev/null; then
-      cat "$work/reader.log" >&2
-      echo "The gitmoji of this checkout cannot name a project's adopted release." >&2
-      exit 1
-    fi
-  fi
-  # Run where the caller stands, in the project. What `pin` says on failure is the message.
-  version=$("$reader" pin </dev/null) || exit
-  # The answer becomes part of a tag name. Take digits and dots in three parts, nothing else.
-  case "$version" in
-    '' | *[!0-9.]* | .* | *. | *..* | *.*.*.*)
-      echo "gitmoji pin answered with something other than a release number: $version" >&2
-      exit 1
-      ;;
-    *.*.*) ;;
-    *)
-      echo "gitmoji pin answered with something other than a release number: $version" >&2
-      exit 1
-      ;;
-  esac
-  pinned="$work/release"
-  mkdir "$pinned"
-  git -C "$pinned" init -q
-  git -C "$pinned" fetch -q --depth=1 --no-tags https://github.com/D1no/gitmoji.git "refs/tags/v$version"
-  git -C "$pinned" -c advice.detachedHead=false checkout -q --detach 'FETCH_HEAD^{commit}'
-  "$pinned/install.sh"
-  exit
-fi
-
-# Only 1 means yes. Any other value means no, so that a setting such as 0 or false can
-# never replace a working command.
+pinned=0
 overwrite=${GITMOJI_OVERWRITE:-}
 target=
 tickets=
 for word in "$@"; do
   case "$word" in
+    --pinned) pinned=1 ;;
     --overwrite) overwrite=1 ;;
-    -h | --help)
-      sed -n '1d; /^#/!q; s/^# \{0,1\}//p' "$0"
-      exit 0
-      ;;
+    -h | --help) usage; exit 0 ;;
+    -*) usage >&2; exit 2 ;;
     *)
-      if [ -z "$target" ]; then
-        target=$word
-      elif [ -z "$tickets" ]; then
-        tickets=$word
-      fi
-      ;;
+      if [ -z "$target" ]; then target=$word
+      elif [ -z "$tickets" ]; then tickets=$word
+      else usage >&2; exit 2
+      fi ;;
   esac
 done
 tickets=${tickets:-github}
-
 case "$tickets" in
   github | backlog) ;;
-  *)
-    echo "the ticket format is github or backlog, not: $tickets" >&2
-    exit 2
-    ;;
+  *) echo "the ticket format is github or backlog, not: $tickets" >&2; exit 2 ;;
 esac
-if [ -n "$target" ] && ! git -C "$target" rev-parse --git-dir >/dev/null 2>&1; then
-  echo "usage: ./install.sh [--overwrite] [path to a git repository] [github|backlog]" >&2
-  echo "$target is not inside a git repository" >&2
-  exit 2
+if [ -n "$target" ]; then
+  if [ "$pinned" = 1 ]; then usage >&2; exit 2; fi
+  if ! git -C "$target" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "$target is not inside a git repository" >&2
+    exit 2
+  fi
 fi
 
-# 1. Which prebuilt command fits this machine.
+checkout=
+if [ -z "$installer_release" ]; then
+  # The checkout can also build from source if no prebuilt binary is available.
+  checkout=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+  installer_release=$(awk -F'"' '/^version = "/ {print $2; found=1; exit} END {if (!found) exit 1}' "$checkout/package/Cargo.toml")
+fi
+
 exe=gitmoji
 case "$(uname -s)" in
   Darwin) os=apple-darwin ;;
   Linux) os=unknown-linux-musl ;;
-  MINGW* | MSYS* | CYGWIN*)
-    os=pc-windows-msvc
-    exe=gitmoji.exe
-    ;;
+  MINGW* | MSYS* | CYGWIN*) os=pc-windows-msvc; exe=gitmoji.exe ;;
   *) os=unknown ;;
 esac
 case "$(uname -m)" in
@@ -134,113 +63,180 @@ case "$(uname -m)" in
   x86_64 | amd64) arch=x86_64 ;;
   *) arch=unknown ;;
 esac
-# The release that matches this clone: the version in its Cargo.toml.
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$here/package/Cargo.toml" | head -n 1)
-repository=${GITMOJI_REPOSITORY:-D1no/gitmoji}
 asset="gitmoji-$arch-$os"
 [ "$exe" = gitmoji.exe ] && asset="$asset.exe"
-# A folder of this run's own, so that nothing from an earlier or a parallel run is used.
-download=$(mktemp -d "${TMPDIR:-/tmp}/gitmoji-install.XXXXXX")
-trap 'rm -rf "$download"' EXIT INT TERM
-binary=
-if [ "$arch" != unknown ] && [ "$os" != unknown ] && command -v curl >/dev/null 2>&1; then
-  # GITMOJI_RELEASES points at another copy of the release files, such as a mirror.
-  base=${GITMOJI_RELEASES:-https://github.com/$repository/releases/download/v$version}
-  # A private repository normally declines this anonymous probe. Report failure
-  # after the authenticated download has also been tried.
-  if curl -fsL "$base/$asset" -o "$download/$asset" && curl -fsL "$base/SHA256SUMS" -o "$download/SHA256SUMS"; then
-    expected=$(grep " $asset\$" "$download/SHA256SUMS" | cut -d' ' -f1)
-    if command -v sha256sum >/dev/null 2>&1; then
-      actual=$(sha256sum "$download/$asset" | cut -d' ' -f1)
-    else
-      actual=$(shasum -a 256 "$download/$asset" | cut -d' ' -f1)
-    fi
-    if [ -n "$expected" ] && [ "$expected" = "$actual" ]; then
-      binary="$download/$asset"
-      chmod +x "$binary"
-    else
-      echo "The download of $asset did not match the release's checksum; it was not used." >&2
-    fi
-  elif command -v gh >/dev/null 2>&1 && gh release download "v$version" --repo "$repository" \
-    --pattern "$asset" --pattern SHA256SUMS --dir "$download" --clobber >/dev/null 2>&1; then
-    # A repository that is not public gives its release files only to a signed-in gh.
-    if (cd "$download" && grep " $asset\$" SHA256SUMS | { sha256sum -c - 2>/dev/null || shasum -a 256 -c - ; } >/dev/null 2>&1); then
-      binary="$download/$asset"
-      chmod +x "$binary"
-    else
-      echo "The download of $asset did not match the release's checksum; it was not used." >&2
-    fi
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/gitmoji-install.XXXXXX")
+staged=
+cleanup() {
+  rm -rf "$work"
+  if [ -n "$staged" ]; then rm -f "$staged"; fi
+}
+trap cleanup EXIT
+trap 'exit 1' INT HUP TERM
+
+download() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O "$2" "$1"
   else
-    echo "Could not download gitmoji $version for this machine from $base."
+    echo "Install curl or wget to download Gitmoji." >&2
+    return 1
   fi
-fi
-if [ -z "$binary" ]; then
-  echo "Could not obtain a verified gitmoji $version binary for $(uname -s) $(uname -m)."
-  if command -v cargo >/dev/null 2>&1; then
-    echo "Building it with cargo."
-    (cd "$here/package" && cargo build --release --locked --quiet)
-    binary="$here/package/target/release/$exe"
+}
+
+# A private GitHub repository may require a signed-in gh client. Mirrors always
+# supply their own files, so a missing file there cannot select a different source.
+release_file() {
+  if download "$base/$1" "$dest/$1"; then return 0; fi
+  if [ -z "${GITMOJI_RELEASES:-}" ] && command -v gh >/dev/null 2>&1 &&
+      gh release download "v$version" --repo "$repository" --pattern "$1" \
+        --dir "$dest" --clobber >/dev/null 2>&1; then return 0; fi
+  echo "Could not download $1 from $base." >&2
+  return 1
+}
+
+checksum() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sum=$(sha256sum < "$1") || return 1
+  elif command -v shasum >/dev/null 2>&1; then
+    sum=$(shasum -a 256 < "$1") || return 1
   else
-    echo "Install Rust (https://rustup.rs) and run this again; it will build the command." >&2
+    echo "Install sha256sum or shasum to verify the release." >&2
+    return 1
+  fi
+  printf '%s\n' "${sum%% *}"
+}
+
+# Set binary to a verified executable, reusing the reader when it is also the
+# target release. A repeat install only downloads the small checksum manifest.
+verified_release=
+fetch_binary() {
+  version=$1
+  if [ "$version" = "$verified_release" ]; then return 0; fi
+  if [ "$arch" = unknown ] || [ "$os" = unknown ]; then
+    echo "No Gitmoji release binary for $(uname -s) $(uname -m)." >&2
+    return 1
+  fi
+  dest="$work/$version"
+  repository=${GITMOJI_REPOSITORY:-D1no/gitmoji}
+  base=${GITMOJI_RELEASES:-https://github.com/$repository/releases/download/v$version}
+  mkdir -p "$dest" || return 1
+  release_file SHA256SUMS || return 1
+  expected=$(awk -v asset="$asset" '
+    $2 == asset && NF == 2 { sum = $1; n++ }
+    END { if (n == 1) print sum }
+  ' "$dest/SHA256SUMS") || return 1
+  if [ "${#expected}" != 64 ]; then
+    echo "SHA256SUMS must contain one checksum for $asset." >&2
+    return 1
+  fi
+
+  if [ -f "$candidate_binary" ] && [ -x "$candidate_binary" ] &&
+      [ "$(checksum "$candidate_binary")" = "$expected" ]; then
+    binary=$candidate_binary
+  else
+    release_file "$asset" || return 1
+    binary="$dest/$asset"
+    actual=$(checksum "$binary") || return 1
+    if [ "$expected" != "$actual" ]; then
+      echo "The download of $asset did not match the release's checksum." >&2
+      return 1
+    fi
+    chmod +x "$binary" || return 1
+  fi
+  if [ "$("$binary" --version)" != "gitmoji $version (gitmoji-triangle)" ]; then
+    echo "The verified file did not identify itself as Gitmoji Triangle $version." >&2
+    return 1
+  fi
+  verified_release=$version
+}
+
+ours() {
+  case "$("$1" --version 2>/dev/null </dev/null || true)" in
+    *'(gitmoji-triangle)') return 0 ;;
+  esac
+  return 1
+}
+
+current=$(command -v gitmoji 2>/dev/null || true)
+candidate_binary=$current
+if [ -n "${GITMOJI_BIN:-}" ]; then candidate_binary="$GITMOJI_BIN/$exe"; fi
+release=$installer_release
+if [ "$pinned" = 1 ]; then
+  reader=
+  for available in "$candidate_binary" "$current"; do
+    if [ -f "$available" ] && [ -x "$available" ] && ours "$available" &&
+        "$available" pin --help >/dev/null 2>&1 </dev/null; then
+      reader=$available
+      break
+    fi
+  done
+  if [ -z "$reader" ]; then
+    fetch_binary "$installer_release" || exit 1
+    reader=$binary
+  fi
+  # The native reader owns TOML parsing and settings precedence. With Git
+  # absent it reads the current folder, so locate the enclosing worktree first.
+  if command -v git >/dev/null 2>&1; then
+    release=$("$reader" pin </dev/null)
+  else
+    here=$(pwd -P)
+    root=$here
+    while [ ! -e "$root/.git" ] && [ "$root" != / ]; do
+      root=${root%/*}
+      root=${root:-/}
+    done
+    if [ ! -e "$root/.git" ]; then root=$here; fi
+    case "$reader" in /*) ;; *) reader="$here/$reader" ;; esac
+    release=$(cd "$root" && "$reader" pin </dev/null)
+  fi
+  # Only a plain release number may become part of a URL or filesystem path.
+  case "$release" in
+    '' | *[!0-9.]* | .* | *. | *..* | *.*.*.*) valid=0 ;;
+    *.*.*) valid=1 ;;
+    *) valid=0 ;;
+  esac
+  if [ "$valid" != 1 ]; then
+    echo "gitmoji pin answered with something other than a release number: $release" >&2
     exit 1
   fi
 fi
-
-# 2. Is there a gitmoji already, and is it this one?
-on_path() {
-  case ":$PATH:" in
-    *":$1:"*) return 0 ;;
-  esac
-  return 1
-}
-ours() {
-  case "$("$1" --version 2>/dev/null </dev/null || true)" in
-    *gitmoji-triangle*) return 0 ;;
-  esac
-  return 1
-}
-folder=${GITMOJI_BIN:-}
-current=$(command -v gitmoji 2>/dev/null || true)
-if [ -n "$current" ] && [ -f "$current" ]; then
-  if ours "$current"; then
-    # An earlier copy of this command: bring it up to date where it is.
-    if [ -z "$folder" ] && [ -w "$current" ]; then
-      folder=$(dirname "$current")
-    fi
-  else
-    echo "There is already a gitmoji command on this machine, and it is another tool:"
-    echo "  $current  ($("$current" --version 2>/dev/null </dev/null | head -n 1 || true))"
-    echo "It is probably gitmoji-cli. Git hooks run the first gitmoji on PATH, so only one"
-    echo "of the two can be used. Replacing it breaks scripts and hooks that call gitmoji-cli."
-    if [ -z "$overwrite" ]; then
-      if [ -t 0 ]; then
-        printf 'Replace it with Gitmoji Triangle? [y/N] '
-        read -r answer
-        case "$answer" in
-          y | Y | yes | Yes | YES) overwrite=1 ;;
-        esac
-      else
-        echo "Nothing was changed. To replace it, run this again with --overwrite." >&2
-        exit 3
-      fi
-    fi
-    if [ "$overwrite" != 1 ]; then
-      echo "Left as it is. Nothing was installed." >&2
-      exit 3
-    fi
-    if [ -z "$folder" ]; then
-      if [ -w "$(dirname "$current")" ]; then
-        folder=$(dirname "$current")
-      else
-        echo "$(dirname "$current") cannot be written to, so the other gitmoji stays there."
-        echo "Remove it yourself (npm uninstall -g gitmoji-cli, or brew uninstall gitmoji)."
-      fi
-    fi
-    echo "To keep it replaced, also uninstall the other tool: npm uninstall -g gitmoji-cli, or brew uninstall gitmoji."
+if ! fetch_binary "$release"; then
+  if [ -z "$checkout" ] || [ "$pinned" = 1 ] || ! command -v cargo >/dev/null 2>&1; then
+    exit 1
   fi
+  echo "Building gitmoji $release from this checkout with cargo."
+  (cd "$checkout/package" && cargo build --release --locked --quiet)
+  binary="$checkout/package/target/release/$exe"
 fi
 
-# 3. Where to put it: the first folder on PATH you can write to.
+on_path() {
+  case ":$PATH:" in *":$1:"*) return 0 ;; esac
+  return 1
+}
+
+allow_replacement() {
+  other=$1
+  echo "Another tool named gitmoji is installed at $other." >&2
+  echo "Replacing it affects scripts and hooks that use it." >&2
+  if [ -z "$overwrite" ] && [ -t 0 ]; then
+    printf 'Replace it with Gitmoji Triangle? [y/N] ' >&2
+    read -r answer || answer=
+    case "$answer" in y | Y | yes | Yes | YES) overwrite=1 ;; esac
+  fi
+  if [ "$overwrite" != 1 ]; then
+    echo "Nothing was changed. To replace it, use --overwrite or GITMOJI_OVERWRITE=1." >&2
+    exit 3
+  fi
+}
+
+folder=${GITMOJI_BIN:-}
+if [ -n "$current" ] && [ -f "$current" ]; then
+  if ! ours "$current"; then allow_replacement "$current"; fi
+  if [ -z "$folder" ] && [ -w "$(dirname "$current")" ]; then folder=$(dirname "$current"); fi
+fi
 if [ -z "$folder" ]; then
   for candidate in "$HOME/.local/bin" "$HOME/bin" "$HOME/.cargo/bin" /opt/homebrew/bin /usr/local/bin; do
     if on_path "$candidate" && [ -d "$candidate" ] && [ -w "$candidate" ]; then
@@ -249,24 +245,30 @@ if [ -z "$folder" ]; then
     fi
   done
 fi
-if [ -z "$folder" ]; then
-  folder="$HOME/.local/bin"
+folder=${folder:-"$HOME/.local/bin"}
+if [ -f "$folder/$exe" ] && [ "$folder/$exe" != "$current" ] && ! ours "$folder/$exe"; then
+  allow_replacement "$folder/$exe"
 fi
-mkdir -p "$folder"
-# Copy beside the old file and move over it, so a running command is never half written.
-cp "$binary" "$folder/$exe.new"
-chmod +x "$folder/$exe.new"
-mv -f "$folder/$exe.new" "$folder/$exe"
-rm -rf "$download"
-echo "Installed $("$folder/$exe" --version) as $folder/$exe"
+if [ -d "$folder/$exe" ]; then echo "The destination $folder/$exe is a directory." >&2; exit 1; fi
+if [ -x "$folder/$exe" ] && cmp -s "$binary" "$folder/$exe"; then
+  echo "Already installed: $folder/$exe (gitmoji $release)."
+else
+  mkdir -p "$folder"
+  staged=$(mktemp "$folder/.gitmoji-install.XXXXXX")
+  cp "$binary" "$staged"
+  chmod 755 "$staged"
+  mv -f "$staged" "$folder/$exe"
+  staged=
+  echo "Installed $("$folder/$exe" --version) as $folder/$exe"
+fi
 
-# 4. Set the repository up. The command does this itself, and says so when it is not on PATH.
-if [ -z "$target" ]; then
-  if ! on_path "$folder"; then
-    echo "$folder is not on your PATH. Add it, so that git hooks find gitmoji."
-  fi
-  echo "To set a repository up: gitmoji init /path/to/the/repository"
-  exit 0
+if [ -n "$target" ]; then
+  cleanup
+  exec "$folder/$exe" init "$target" --tickets "$tickets"
 fi
-echo
-exec "$folder/$exe" init "$target" --tickets "$tickets"
+if ! on_path "$folder"; then
+  echo "$folder is not on your PATH. Prepend it so git hooks can find gitmoji."
+elif [ -n "$current" ] && [ "$current" != "$folder/$exe" ] &&
+     [ "$(command -v gitmoji)" != "$folder/$exe" ]; then
+  echo "Prepend $folder to PATH so git hooks find it before $current."
+fi

@@ -202,6 +202,11 @@ fn mismatched_pin_is_actionable_without_misreporting_old_release_templates() {
     }
     let report = project.report(&project.root, 1);
     assert_eq!(report["binary"].expected, "0.0.1");
+    assert!(report["binary"].remedy.contains(&format!(
+        "/releases/download/v{}/install.sh",
+        env!("CARGO_PKG_VERSION")
+    )));
+    assert!(report["binary"].remedy.ends_with("--pinned"));
     assert_eq!(
         report["binary"].install.as_deref(),
         Some("install.sh --pinned")

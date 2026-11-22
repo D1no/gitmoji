@@ -7,7 +7,7 @@ commit-message:
   prefix: "🧩⬆️ — (deps)"
 ```
 
-Choose the area the dependencies serve. For example, `🧩⬆️` fits an application service and `👷⬆️` fits GitHub Actions updates. Replace `deps` with a scope your repository accepts. The em dash (`—`) marks an automated job with no issue ticket. It needs no hand-written rationale or agent signature under the default rules. Dependabot supplies the body and sign-off.
+Choose the area the dependencies serve. For example, `🧩⬆️` fits an application service and `👷⬆️` fits GitHub Actions updates. Replace `deps` with a scope your repository accepts. The em dash (`—`) marks an automated job with no issue ticket. It needs no hand-written rationale or agent signature under the default rules. Dependabot supplies the body and sign-off. Gitmoji’s default length rule warns about long messages and lets them pass. With `[rules] length = "error"`, the generated body can fail the commit check, especially for grouped updates.
 
 End the prefix at the closing parenthesis. Dependabot appends the colon and space. Omit `include: scope` when the prefix already contains a parenthesized scope. If an entry has a separate `prefix-development`, give it a complete Gitmoji heading too. [Dependabot commit-message options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#commit-message)
 
@@ -20,7 +20,7 @@ A single npm update and a two-package group using the same prefix produced the f
 🧩:arrow_up: — (deps): Bump the number-helpers group with 2 updates
 ```
 
-With the [managed workflows](pull-requests.md#enable-automatic-pr-titles), `gitmoji-commits` checks the incoming commit on each PR. The title workflow replaces Dependabot’s matching job heading with the emoji caption. It keeps the full PR description line, including versions or paths that Dependabot may shorten in the stored commit subject. An edited title with a different scope keeps its wording. The grouped PR has one heading because the two upgrades share a commit. A reviewer can edit the description directly on the PR.
+With the [managed workflows](pull-requests.md#enable-automatic-pr-titles), `gitmoji-commits` checks the incoming commit on each PR. The title workflow replaces Dependabot’s matching job heading with the emoji caption. It keeps the full title text, including versions or paths that Dependabot may shorten in the stored commit subject. An edited title with a different scope keeps its wording. The grouped PR has one heading because the two upgrades share a commit. A reviewer can edit the title directly on the PR.
 
 ```text
 [`🧩⬆️`] Bump ms from 2.1.0 to 2.1.3
