@@ -2,6 +2,12 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.19.1 (22 November 2026)
+
+- Use a bare Unicode upgrade arrow in Dependabot prefixes, for example `🧑‍💻⬆ — (deps)`, to keep the arrow visible in raw Git history. Gitmoji accepts the bare arrow, its emoji-presentation form and earlier bot shortcodes. The generated PR inventory uses `⬆️`. [Dependabot setup](skills/gitmoji/references/dependabot.md)
+- Editing the presentation of the arrow in a Dependabot PR title now keeps one inventory and the full description. The original signed commit remains intact.
+- To upgrade, change the project pin to `0.19.1`, run the standalone installer with `--pinned`, and run `gitmoji init` to refresh the installed guide and workflows. To change future raw bot commits, copy the prefix from the guide into the project's Dependabot configuration.
+
 ## 0.19.0 (22 November 2026)
 
 - Draft release notes with `gitmoji changelog FROM..TO`. For a first release, pass its tag alone. Each landed pull request appears once with its tickets and breaking changes. Projects can set their own audience groups. The draft uses merge-preserving history and leaves the final wording to the release editor. [Changelog guide](package/README.md#draft-release-notes)
