@@ -514,6 +514,49 @@ fn stored_dependabot_upgrades_pass_checks_and_get_one_caption() {
 }
 
 #[test]
+fn log_exits_quietly_when_its_reader_has_closed_the_pipe() {
+    let repo = tempfile::tempdir().unwrap();
+    git(repo.path(), &["init", "-q"]);
+    git(
+        repo.path(),
+        &["commit", "--allow-empty", "-qm", "🔖 release fixture"],
+    );
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let result = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .args(["log", "🔖"])
+        .current_dir(repo.path())
+        .stdout(writer)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{}", text(&result));
+    assert!(result.stderr.is_empty());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn log_reports_a_write_failure_to_the_user() {
+    let repo = tempfile::tempdir().unwrap();
+    git(repo.path(), &["init", "-q"]);
+    git(
+        repo.path(),
+        &["commit", "--allow-empty", "-qm", "🔖 release fixture"],
+    );
+    let full = std::fs::File::options()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .args(["log", "🔖"])
+        .current_dir(repo.path())
+        .stdout(full)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(1), "{}", text(&result));
+    assert!(text(&result).contains("cannot write gitmoji log to stdout"));
+}
+
+#[test]
 fn log_finds_each_authored_slot_and_preserves_the_original_subjects() {
     let repo = tempfile::tempdir().unwrap();
     let here = repo.path();

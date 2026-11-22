@@ -93,6 +93,11 @@ enum Action {
     /// Look at the staged files and say when they look like more than one commit.
     Staged,
     /// Show authored commits whose heading contains a vocabulary emoji, newest first.
+    ///
+    /// Search any slot in the authored heading. Merge commits and emoji mentioned only in
+    /// prose are skipped. Recognized Dependabot upgrade shortcodes match the same emoji.
+    /// Headings use the vocabulary’s canonical spelling. A valid search with no matches
+    /// prints nothing and succeeds. An unknown emoji or invalid revision exits nonzero.
     Log {
         /// One area, activity, modifier or marker, as an emoji or GitHub shortcode.
         emoji: String,
