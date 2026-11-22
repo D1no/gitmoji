@@ -225,6 +225,18 @@ fn explains_missing_rows_without_putting_diagnostics_in_markdown() {
     let diagnostic = String::from_utf8(only_direct.stderr).unwrap();
     assert!(diagnostic.contains("no qualifying pull request"));
     assert!(diagnostic.contains("2 single-parent commits"));
+    let short = |id: &str| git(project.dir.path(), &["rev-parse", "--short", id]);
+    let entries: Vec<_> = diagnostic
+        .lines()
+        .filter(|line| line.starts_with("  "))
+        .collect();
+    assert_eq!(
+        entries,
+        [
+            format!("  {} Update the help text", short(&direct)),
+            format!("  {} Fix report totals (#23)", short(&squash)),
+        ]
+    );
 
     let equal = project.changelog(&format!("{tip}..{tip}"));
     assert!(equal.status.success());
