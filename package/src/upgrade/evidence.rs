@@ -121,15 +121,9 @@ fn merge_caption(
     vocab: &Vocabulary,
 ) -> Result<Caption> {
     checked_title(source, "pull request")?;
-    let incoming = crate::history::incoming_commits_with(&parents[0], &[&parents[1]], git_text)?;
-    caption::summarize_pr(
-        pr.number,
-        source,
-        &incoming.subjects,
-        incoming.contains_merge,
-        vocab,
-    )
-    .map_err(anyhow::Error::msg)
+    let incoming =
+        crate::history::incoming_commits_with(&parents[0], &[&parents[1]], vocab, git_text)?;
+    incoming.summarize_pr(pr.number, source, vocab)
 }
 
 fn rewritten_evidence(original: &str, oid: &str, parents: &[String]) -> Result<&'static str> {

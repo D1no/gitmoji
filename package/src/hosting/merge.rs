@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, ensure};
 use clap::Args;
-use gitmoji_triangle::{caption, vocabulary::Vocabulary};
+use gitmoji_triangle::vocabulary::Vocabulary;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -193,15 +193,9 @@ pub(crate) fn merge(args: MergeArgs) -> Result<()> {
         .transpose()?;
     let base = commit_oid(&pr["baseRef"]["target"]["oid"])?;
     let head = commit_oid(&pr["headRefOid"])?;
-    let incoming=incoming_commits(base,&[head]).with_context(|| format!("fetch the base branch and refs/pull/{}/head from the target repository into this checkout",args.pr))?;
-    let caption = caption::summarize_pr(
-        args.pr,
-        string(&pr, "title")?,
-        &incoming.subjects,
-        incoming.contains_merge,
-        &Vocabulary::builtin()?,
-    )
-    .map_err(anyhow::Error::msg)?;
+    let vocab = Vocabulary::builtin()?;
+    let incoming = incoming_commits(base, &[head], &vocab).with_context(|| format!("fetch the base branch and refs/pull/{}/head from the target repository into this checkout",args.pr))?;
+    let caption = incoming.summarize_pr(args.pr, string(&pr, "title")?, &vocab)?;
     let body = body(&pr, original.as_deref())?;
     let payload = json!({"sha":head,"merge_method":"merge","commit_title":caption.subject,"commit_message":body});
     let digest = snapshot_digest(json!([
