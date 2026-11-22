@@ -240,16 +240,17 @@ fn summarize(
     Some(Entry { group: rank, line })
 }
 
-/// A squash or rebase can have the same graph shape as a direct commit. Count
+/// A squash or rebase can have the same graph shape as a direct commit. List
 /// the single-parent objects on the release line without guessing PR numbers.
 fn unlisted_first_parent(
     span: &str,
     claimed: &HashSet<String>,
     vocab: &Vocabulary,
-) -> Result<usize> {
+) -> Result<Vec<String>> {
     let log = git(&[
         "log",
         "--first-parent",
+        "--reverse",
         "--min-parents=1",
         "--max-parents=1",
         "--no-patch",
@@ -258,23 +259,31 @@ fn unlisted_first_parent(
         "--no-show-signature",
         "--encoding=UTF-8",
         "-z",
-        "--format=%H%x00%s",
+        "--format=%H%x00%h%x00%an <%ae>%x00%s",
         span,
         "--",
     ])?;
     let mut fields = log.split_terminator('\0');
-    let mut count = 0;
+    let mut omitted = Vec::new();
     while let Some(hash) = fields.next() {
+        let short = fields.next().context("missing abbreviated commit ID")?;
+        let author = fields
+            .next()
+            .context("missing first-parent commit author")?;
         let subject = fields
             .next()
             .context("missing first-parent commit subject")?;
         let marker =
             caption::heading(subject, vocab).is_some_and(|h| matches!(h.activity, "🔖" | "🔺"));
         if !marker && !claimed.contains(hash) {
-            count += 1;
+            let subject = dependabot_message(vocab, author, subject);
+            omitted.push(format!(
+                "  {short} {}",
+                subject.replace(char::is_control, " ")
+            ));
         }
     }
-    Ok(count)
+    Ok(omitted)
 }
 
 /// Return a release-note draft in stable section order, oldest landings first.
@@ -359,11 +368,15 @@ pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result
     if markdown.is_empty() {
         eprintln!("gitmoji changelog: no qualifying pull request landings in this range.");
     }
-    if omitted > 0 {
-        let noun = if omitted == 1 { "commit" } else { "commits" };
+    if !omitted.is_empty() {
+        let count = omitted.len();
+        let noun = if count == 1 { "commit" } else { "commits" };
         eprintln!(
-            "gitmoji changelog: {omitted} single-parent {noun} on the first-parent history outside the draft. Review direct, squash and rebased changes for release notes."
+            "gitmoji changelog: {count} single-parent {noun} on the first-parent history outside the draft. Review direct, squash and rebased changes for release notes."
         );
+        for line in omitted {
+            eprintln!("{line}");
+        }
     }
     Ok(markdown)
 }
