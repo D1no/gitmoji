@@ -223,8 +223,10 @@ branch merge message with the incoming intentions, source and destination.
 GitHub’s **Update branch** button runs on GitHub and bypasses local hooks.
 For an agent-signed merge, use `git merge --edit origin/<base>` and append
 the usual signature in the editor. A conflicted merge can be signed when you
-finish it with `git commit`. See [local merge captions](references/pull-requests.md#local-branch-merges)
-for hook setup, examples and reading back the arriving commits.
+finish it with `git commit`. For a non-interactive session, use the
+[terminal signing recipe](references/pull-requests.md#signing-a-local-merge-from-an-agent-terminal)
+to combine the prepared caption and harness signature before committing.
+[Local merge captions](references/pull-requests.md#local-branch-merges)
 
 `gitmoji history` identifies a stored merge by its parents. Use
 `gitmoji explain --commit HEAD` to inspect a stored merge.
