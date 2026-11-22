@@ -363,7 +363,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
             for error in &report.errors {
                 eprintln!("gitmoji: {error}");
             }
-            if !branch_merge {
+            if branch_merge {
+                eprintln!(
+                    "To sign the prepared merge from a terminal, follow references/pull-requests.md#signing-a-local-merge-from-an-agent-terminal in the installed Gitmoji skill."
+                );
+            } else {
                 eprintln!("\n  {}", vocab.format.subject);
                 eprintln!("  {}", vocab.format.example);
                 eprintln!(

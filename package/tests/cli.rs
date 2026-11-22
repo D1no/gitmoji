@@ -734,6 +734,7 @@ fn branch_caption_uses_parents_and_body_even_when_it_names_an_arriving_pr() {
     std::fs::write(&draft, msg).unwrap();
     let unsigned = gitmoji(&repo, &["check", "--fix", draft.to_str().unwrap()]);
     assert!(!unsigned.status.success(), "{}", text(&unsigned));
+    assert!(text(&unsigned).contains("signing-a-local-merge-from-an-agent-terminal"));
     assert!(
         text(&unsigned).contains("an agent signs"),
         "{}",
