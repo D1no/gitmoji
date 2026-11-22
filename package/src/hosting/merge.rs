@@ -148,29 +148,74 @@ fn commit_oid(value: &Value) -> Result<&str> {
         .context("GitHub returned an invalid PR commit ID")
 }
 
-/// Match GitHub's short, public explanations. An enterprise proxy or ruleset
-/// can return arbitrary text, including secrets or terminal escapes.
-fn known_merge_reason(value: &Value) -> Option<&'static str> {
-    let message = value.get("message")?.as_str()?.trim_end_matches('.');
-    [
-        "Pull Request is not mergeable",
-        "Head branch was modified",
-        "Head branch was modified. Review and try the merge again",
-        "Base branch was modified. Review and try the merge again",
-        "Merge commits are not allowed on this repository",
-        "At least one approving review is required",
-        "Two approving reviews are required",
-        "Blocked by branch protection",
-        "Validation failed",
-        "Resource not accessible by integration",
-        "Bad credentials",
-        "Not found",
-    ]
-    .into_iter()
-    .find(|known| known.eq_ignore_ascii_case(message))
+/// Describe a later observation separately from GitHub's original refusal.
+fn after_405(client: &Client, number: u64, base: &str, head: &str) -> String {
+    let Ok(pr) = client.get_pull(number) else {
+        return "The follow-up PR lookup failed. Check merge conflicts, required reviews and checks on the PR.".into();
+    };
+    if pr["number"].as_u64() != Some(number) {
+        return "The follow-up lookup did not identify the requested PR. Inspect it on GitHub."
+            .into();
+    }
+    let (refs, same_commits) = match (
+        commit_oid(&pr["base"]["sha"]),
+        commit_oid(&pr["head"]["sha"]),
+    ) {
+        (Ok(b), Ok(h)) => match (!b.eq_ignore_ascii_case(base), !h.eq_ignore_ascii_case(head)) {
+            (true, true) => (
+                "The base and head changed since the reviewed preview.",
+                false,
+            ),
+            (true, false) => ("The base changed since the reviewed preview.", false),
+            (false, true) => ("The head changed since the reviewed preview.", false),
+            (false, false) => ("The base and head match the reviewed preview.", true),
+        },
+        _ => (
+            "The lookup could not confirm the reviewed revisions.",
+            false,
+        ),
+    };
+    let status = if pr["merged"] == true {
+        "The PR is now merged. No further submission is needed."
+    } else if pr["state"] == "closed" {
+        "The PR is now closed."
+    } else if pr["state"] != "open" {
+        "GitHub did not report whether the PR is open."
+    } else if pr["draft"] == true {
+        "The PR is now a draft."
+    } else {
+        match (pr["mergeable_state"].as_str(), &pr["mergeable"]) {
+            (Some("dirty"), _) => "GitHub reports merge conflicts.",
+            (Some("behind"), _) => "GitHub reports the head branch is behind the base.",
+            (Some("blocked"), _) => {
+                "GitHub reports a blocked merge. Inspect the required reviews and checks on the PR."
+            }
+            (Some("clean"), Value::Bool(true)) if same_commits && pr["draft"] == false => {
+                "GitHub now reports a clean, mergeable PR. The earlier refusal may have been temporary. Review a fresh preview before another submission."
+            }
+            (Some("clean"), Value::Bool(true)) => {
+                "GitHub now reports a clean, mergeable PR. Review a fresh preview before submitting."
+            }
+            (_, Value::Bool(false)) => {
+                "GitHub currently marks the PR unmergeable. Inspect its merge requirements."
+            }
+            (Some("unknown"), _) | (_, Value::Null) => {
+                "GitHub has not confirmed mergeability yet. Wait for the PR's mergeability check to finish."
+            }
+            _ => "Inspect merge eligibility, required reviews and checks on the PR.",
+        }
+    };
+    format!("Follow-up PR state: {refs} {status}")
 }
 
-fn submit(client: &Client, pr: u64, payload: &Value, url: &str) -> Result<()> {
+fn submit(
+    client: &Client,
+    pr: u64,
+    payload: &Value,
+    url: &str,
+    base: &str,
+    head: &str,
+) -> Result<()> {
     let uncertain = || format!("check {url} for the merge outcome before retrying");
     let mut response = client
         .send(
@@ -181,15 +226,6 @@ fn submit(client: &Client, pr: u64, payload: &Value, url: &str) -> Result<()> {
         .with_context(uncertain)?;
     let status = response.status();
     if status.is_client_error() {
-        let advice = match status.as_u16() {
-            405 => {
-                "Check merge conflicts, required reviews and checks, and whether merge commits are allowed."
-            }
-            409 => "Fetch the current PR head and review a fresh preview before submitting.",
-            422 => "Inspect the proposed merge and the repository's merge rules.",
-            401 | 403 => "Check the credential's access to merge this pull request.",
-            _ => "Inspect the pull request and its merge requirements.",
-        };
         let reason = response
             .body_mut()
             .with_config()
@@ -197,10 +233,17 @@ fn submit(client: &Client, pr: u64, payload: &Value, url: &str) -> Result<()> {
             .read_json::<Value>()
             .ok()
             .as_ref()
-            .and_then(known_merge_reason);
+            .and_then(|value| super::merge_reason::display(value, &client.token));
+        let advice = match status.as_u16() {
+            405 => after_405(client, pr, base, head),
+            409 => "Fetch the current PR head and review a fresh preview before submitting.".into(),
+            422 => "Inspect the proposed merge and the repository's merge rules.".into(),
+            401 | 403 => "Check the credential's access to merge this pull request.".into(),
+            _ => "Inspect the pull request and its merge requirements.".into(),
+        };
         if let Some(reason) = reason {
             bail!(
-                "GitHub rejected the merge (HTTP {}): {reason}. {advice} {url}",
+                "GitHub rejected the merge (HTTP {}): {reason}\n{advice} {url}",
                 status.as_u16()
             );
         }
@@ -232,8 +275,8 @@ fn submit(client: &Client, pr: u64, payload: &Value, url: &str) -> Result<()> {
             Ok(())
         }
         Some(false) => {
-            if let Some(reason) = known_merge_reason(&outcome) {
-                bail!("GitHub did not merge the pull request: {reason}. Check {url}");
+            if let Some(reason) = super::merge_reason::display(&outcome, &client.token) {
+                bail!("GitHub did not merge the pull request: {reason}\nCheck {url}");
             }
             bail!("GitHub did not merge the pull request. Check {url}");
         }
@@ -322,7 +365,7 @@ pub(crate) fn merge(args: MergeArgs) -> Result<()> {
     );
     let url = format!("{}/{}/pull/{}", client.server, args.repo, args.pr);
     // The host checks the head atomically. Submit exactly once.
-    submit(&client, args.pr, &payload, &url)
+    submit(&client, args.pr, &payload, &url, base, head)
 }
 
 #[cfg(test)]

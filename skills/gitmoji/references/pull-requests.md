@@ -107,7 +107,9 @@ gitmoji github-merge --repo OWNER/REPO --pr 42
 
 Review the message, commit coverage and preview digest. Add `--merge --expect-preview REVIEWED_SHA256` to submit that exact proposal. See `--help` for enterprise hosts and preserving a custom message. Use the repository’s normal merge button, stack or queue whenever available.
 
-If GitHub rejects a direct merge with HTTP 405, open the PR to check merge conflicts, required reviews, checks and allowed merge methods. For HTTP 409, fetch the current head and review a new preview before submitting it. HTTP 422 calls for checking the proposed merge and repository rules. A connection failure, server error or incomplete confirmation leaves the outcome uncertain. Check the PR before trying again.
+If GitHub refuses a direct merge with HTTP 405, Gitmoji reports the host's reason when available and reads the PR once to see what changed. A changed head or base requires a fresh preview. If GitHub is still calculating mergeability, let the checks settle and preview again. A green PR on that later read can indicate a temporary condition. Only the host's original response can identify what blocked the earlier attempt. Inspect required reviews, checks or rules on the PR when GitHub gives no specific cause.
+
+The command submits a single merge request. Before retrying, confirm the PR is still open, then run the preview and submit its new digest. For HTTP 409, fetch the current head and review a new preview before submitting it. HTTP 422 calls for checking the proposed merge and repository rules. A connection failure, server error or incomplete confirmation leaves the outcome uncertain. Check the PR before trying again.
 
 ## Stacks, queues and squash
 

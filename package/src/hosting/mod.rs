@@ -1,5 +1,6 @@
 //! GitHub PR operations on the caller's host and repository.
 mod merge;
+mod merge_reason;
 mod title;
 
 pub(crate) use merge::{MergeArgs, merge};
