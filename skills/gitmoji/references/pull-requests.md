@@ -107,6 +107,8 @@ gitmoji github-merge --repo OWNER/REPO --pr 42
 
 Review the message, commit coverage and preview digest. Add `--merge --expect-preview REVIEWED_SHA256` to submit that exact proposal. See `--help` for enterprise hosts and preserving a custom message. Use the repository’s normal merge button, stack or queue whenever available.
 
+If GitHub rejects a direct merge with HTTP 405, open the PR to check merge conflicts, required reviews, checks and allowed merge methods. For HTTP 409, fetch the current head and review a new preview before submitting it. HTTP 422 calls for checking the proposed merge and repository rules. A connection failure, server error or incomplete confirmation leaves the outcome uncertain. Check the PR before trying again.
+
 ## Stacks, queues and squash
 
 Each native stacked PR summarizes its own reviewed layer against its immediate base. The stack lands bottom-up. When an upper layer is retargeted, the title workflow refreshes it against its new base. GitHub’s PR page carries the stack map. Review each layer’s title in GitHub. The queue or stack controls its final commit message. GitHub requires its asynchronous stack merge path, and custom commit title and body parameters are supported for direct merges only. Land the stack or queued PR through its usual protected path. [Stacked PRs](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs) · [Merge API](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request-asynchronously)
