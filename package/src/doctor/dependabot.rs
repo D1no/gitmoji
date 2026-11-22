@@ -64,8 +64,7 @@ fn read(top: &Path, file: &str) -> Result<Option<Dependabot>> {
 
 pub(super) fn inspect(top: &Path, settings: Option<&Path>, vocab: &Vocabulary) -> Option<Row> {
     let mut findings = Findings::default();
-    let mut present = false;
-    let rules = std::cell::OnceCell::new();
+    // Dependabot stops at the first file it finds in this order.
     for file in [".github/dependabot.yml", ".github/dependabot.yaml"] {
         match read(top, file) {
             Ok(None) => continue,
@@ -76,20 +75,16 @@ pub(super) fn inspect(top: &Path, settings: Option<&Path>, vocab: &Vocabulary) -
                     .iter()
                     .chain(doc.groups.values())
                     .all(|entry| entry.message.is_none()) => {}
-            Ok(Some(doc)) => {
-                let settings =
-                    rules.get_or_init(|| settings.map_or_else(Config::standard, Config::load));
-                match settings {
-                    Ok(config) => findings.check_file(file, &doc, vocab, config),
-                    Err(_) => findings.errors.push(format!(
-                        "cannot check {file} with the current Gitmoji settings"
-                    )),
-                }
-            }
+            Ok(Some(doc)) => match settings.map_or_else(Config::standard, Config::load) {
+                Ok(config) => findings.check_file(file, &doc, vocab, &config),
+                Err(_) => findings.errors.push(format!(
+                    "cannot check {file} with the current Gitmoji settings"
+                )),
+            },
         }
-        present = true;
+        return Some(findings.row());
     }
-    present.then(|| findings.row())
+    None
 }
 
 impl Findings {
@@ -183,9 +178,15 @@ impl Findings {
             }
         };
         let Some(prefix) = options.get("prefix") else {
-            if options.contains_key("prefix-development") || include_scope {
-                self.errors.push(format!(
-                    "{location}.prefix is required when setting prefix-development or include"
+            if options
+                .get("prefix-development")
+                .is_some_and(|value| !value.is_string())
+            {
+                self.errors
+                    .push(format!("{location}.prefix-development must be a string"));
+            } else if options.contains_key("prefix-development") || include_scope {
+                self.warnings.push(format!(
+                    "{location}: Dependabot infers its prefix from repository history. Set prefix to activate prefix-development or include."
                 ));
             }
             return;
