@@ -12,6 +12,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 
 use gitmoji_triangle::config::{Config, locate};
 use gitmoji_triangle::guide;
@@ -36,18 +37,6 @@ const REFERENCE: &str = "references/vocabulary.txt";
 const SKILL: &[(&str, &str)] = &[
     ("SKILL.md", include_str!("../../skills/gitmoji/SKILL.md")),
     (
-        "scripts/gitmoji-upgrade-history.py",
-        include_str!("../../skills/gitmoji/scripts/gitmoji-upgrade-history.py"),
-    ),
-    (
-        "scripts/github-pr-title.py",
-        include_str!("../../skills/gitmoji/scripts/github-pr-title.py"),
-    ),
-    (
-        "scripts/github-merge.py",
-        include_str!("../../skills/gitmoji/scripts/github-merge.py"),
-    ),
-    (
         "references/upgrade-history.md",
         include_str!("../../skills/gitmoji/references/upgrade-history.md"),
     ),
@@ -55,23 +44,93 @@ const SKILL: &[(&str, &str)] = &[
         "references/pull-requests.md",
         include_str!("../../skills/gitmoji/references/pull-requests.md"),
     ),
+];
+
+/// Scripts and their README shipped under `scripts/` before those helpers moved into `gitmoji`.
+const PREVIOUS_SKILL_SCRIPTS: &[&str] = &[
+    "scripts/README.md",
+    "scripts/antigravity.py",
+    "scripts/claude-code.py",
+    "scripts/codex.py",
+    "scripts/github-merge.py",
+    "scripts/github-pr-title.py",
+    "scripts/gitmoji-upgrade-history.py",
+];
+
+/// SHA-256 digests (after CRLF -> LF normalization) of released `scripts/` files from
+/// `v0.13.0` through `v0.16.0`, so committed downstream customizations are never deleted.
+const RETIRED_SCRIPT_DIGESTS: &[(&str, &str)] = &[
     (
         "scripts/README.md",
-        include_str!("../../skills/gitmoji/scripts/README.md"),
+        "4181ddcf712bf0ca7e4a77c04df734134654a3caa127c27eaa85d37615fe1372",
+    ),
+    (
+        "scripts/README.md",
+        "12debd59d01152e13711e2dd122723dccfd7ec7a92d349db8ad4e3f18413aa62",
     ),
     (
         "scripts/antigravity.py",
-        include_str!("../../skills/gitmoji/scripts/antigravity.py"),
+        "2598761ac9d4f6eb61ec43fdf887995c4b24ec2a348748dd5ce6df293451ae36",
     ),
     (
         "scripts/claude-code.py",
-        include_str!("../../skills/gitmoji/scripts/claude-code.py"),
+        "0907ce72f3aaa4964f9aae882d599c626352d02456042f7b99f8fad370e2356b",
     ),
     (
         "scripts/codex.py",
-        include_str!("../../skills/gitmoji/scripts/codex.py"),
+        "a6b0d2e48e2c3c052989b29001f1453c9d75356ef39f20630aa4e32da66b17cc",
+    ),
+    (
+        "scripts/github-merge.py",
+        "9ca7263f6e7256b442a5f3f179182af6f189b19a7a063456293ba397e59f38b4",
+    ),
+    (
+        "scripts/github-merge.py",
+        "8f82a9abdc418f3da24571f6144dc323fb48229ba952cb4f7b4a7e38911588fb",
+    ),
+    (
+        "scripts/github-pr-title.py",
+        "0d31322c46938b52ff17bd62bac4c232cb80083c9f8daca5714168a7138e1e50",
+    ),
+    (
+        "scripts/gitmoji-upgrade-history.py",
+        "76e2473612c889dfd396e4cc00ce4d81450eaeb891e3a567dab650b12b0a7c3c",
+    ),
+    (
+        "scripts/gitmoji-upgrade-history.py",
+        "9bcf56657c4453fb444b1901196661b322bff60790f6fccd5aef7bc2c0b32543",
+    ),
+    (
+        "scripts/gitmoji-upgrade-history.py",
+        "72c8dcff486296f3bf34e2b775b45b45e75cd928bfbd319163717806f206f6a1",
+    ),
+    (
+        "scripts/gitmoji-upgrade-history.py",
+        "6f2dea3ecd645a9246b5a0e0ea8d8c4e981947dbce80d19c0270dee95d1b1378",
+    ),
+    (
+        "scripts/gitmoji-upgrade-history.py",
+        "2a8b969ee21a3d4c0df0dd5ab721c6fbc38c08c087c78cc689b91f7f78368040",
+    ),
+    (
+        "scripts/gitmoji-upgrade-history.py",
+        "036564d709ccafef4684446c4ca739bc37af551eae6c8c83d59a086ef9b68a8c",
     ),
 ];
+
+fn is_released_script(name: &str, bytes: &[u8]) -> bool {
+    let mut normalized = Vec::with_capacity(bytes.len());
+    for (index, &byte) in bytes.iter().enumerate() {
+        if byte == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+            continue;
+        }
+        normalized.push(byte);
+    }
+    let digest = format!("{:x}", Sha256::digest(&normalized));
+    RETIRED_SCRIPT_DIGESTS
+        .iter()
+        .any(|(script, known)| *script == name && *known == digest)
+}
 
 /// The skill's files as releases up to 0.9 named them. They are taken away when a
 /// project is brought up to date, so that an agent does not find two sets.
@@ -161,10 +220,25 @@ pub fn run(
     let mut changed = Vec::new();
 
     let paths = SkillPaths::new(&top)?;
-    rename_earlier(&top, &paths, &mut changed)?;
+    let older_pin = older_pinned_version(&top)?;
+    if let Some(pin) = &older_pin {
+        if github_workflows {
+            bail!(
+                "the GitHub workflows need a numbered Gitmoji release at least 0.17.0 in gitmoji.toml (found {pin})"
+            );
+        }
+        println!(
+            "0. Compatibility: this repository pins gitmoji {pin} in gitmoji.toml; leaving the skill and managed workflows as they are."
+        );
+        println!(
+            "   Install gitmoji {pin}, or raise [vocabulary].version to 0.17.0 or later and run `gitmoji init` again."
+        );
+    } else {
+        rename_earlier(&top, &paths, &mut changed)?;
 
-    println!("1. The skill, in {SKILL_DIR}");
-    write_skill(&top, &paths, vocab, &mut changed)?;
+        println!("1. The skill, in {SKILL_DIR}");
+        write_skill(&top, &paths, vocab, &mut changed)?;
+    }
 
     println!("2. Settings");
     let adopted = write_settings(&top, vocab, tickets, &mut changed)?;
@@ -175,7 +249,9 @@ pub fn run(
     println!("4. Claude Code");
     write_claude_md(&top, &mut changed)?;
     write_claude_settings(&top, &mut changed)?;
-    write_workflows(&top, &paths, github_workflows, &mut changed)?;
+    if older_pin.is_none() {
+        write_workflows(&top, &paths, github_workflows, &mut changed)?;
+    }
 
     println!();
     let this = std::env::current_exe()
@@ -621,11 +697,26 @@ fn rename_earlier(top: &Path, paths: &SkillPaths, changed: &mut Vec<String>) -> 
     }
 
     // Releases up to 0.9 kept the scripts in `harness/` and the reference beside
-    // SKILL.md. Those that git can give back go; anything else is left and named.
-    for name in EARLIER_SKILL_FILES
+    // SKILL.md, and releases up to 0.16 shipped Python helpers under `scripts/`.
+    // Those that git can give back go (for `scripts/`, only exact released content);
+    // anything else is left and named.
+    for (name, reason, verify_digest) in EARLIER_SKILL_FILES
         .iter()
         .copied()
         .filter(|name| *name != "SKILL.md")
+        .map(|name| {
+            (
+                name,
+                "the skill keeps its reference under references/ now",
+                false,
+            )
+        })
+        .chain(
+            PREVIOUS_SKILL_SCRIPTS
+                .iter()
+                .copied()
+                .map(|name| (name, "`gitmoji` provides these commands directly now", true)),
+        )
     {
         if top.join(&current_dir).join(name).is_symlink() {
             continue;
@@ -635,13 +726,25 @@ fn rename_earlier(top: &Path, paths: &SkillPaths, changed: &mut Vec<String>) -> 
         if !file.is_file() {
             continue;
         }
-        if tracked(top, &path) && !staged(top, &path)? && same_as_committed(top, &path) {
+        if staged(top, &path)? {
+            say(format!(
+                "{path} has staged changes; left as it is. Commit or unstage it, then run `gitmoji init` again"
+            ));
+        } else if tracked(top, &path) && same_as_committed(top, &path) {
+            if verify_digest {
+                let bytes = std::fs::read(&file)
+                    .with_context(|| format!("cannot read {}", file.display()))?;
+                if !is_released_script(name, &bytes) {
+                    say(format!(
+                        "{path} does not match a released gitmoji script; left as it is. Delete it when you no longer need it"
+                    ));
+                    continue;
+                }
+            }
             std::fs::remove_file(&file)
                 .with_context(|| format!("cannot remove {}", file.display()))?;
             changed.push(path.clone());
-            say(format!(
-                "removed {path}; the skill keeps it under scripts/ or references/ now"
-            ));
+            say(format!("removed {path}; {reason}"));
         } else {
             say(format!(
                 "{path} is from an earlier layout and is not as committed; left as it is. Delete it when you no longer need it"
@@ -649,6 +752,7 @@ fn rename_earlier(top: &Path, paths: &SkillPaths, changed: &mut Vec<String>) -> 
         }
     }
     let _ = std::fs::remove_dir(top.join(&current_dir).join("harness"));
+    let _ = std::fs::remove_dir(top.join(&current_dir).join("scripts"));
 
     for name in LEFTHOOK_FILES.iter().copied() {
         let file = top.join(name);
@@ -713,14 +817,6 @@ fn make_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn write_skill_file(to: &Path, name: &str, content: &str) -> Result<()> {
-    write(to, content)?;
-    if name.ends_with(".py") {
-        make_executable(to)?;
-    }
-    Ok(())
-}
-
 /// Write the skill. A file someone added stays; a shipped file someone changed is kept
 /// beside the new one as `<name>.before-update`.
 fn write_skill(
@@ -746,7 +842,7 @@ fn write_skill(
             continue;
         }
         let Some(old) = read_if_present(&to)? else {
-            write_skill_file(&to, name, content)?;
+            write(&to, content)?;
             changed.push(path);
             continue;
         };
@@ -768,7 +864,7 @@ fn write_skill(
                 "   {path} had changes that were never committed; they are kept in {backup}. Compare the two, then delete that file"
             );
         }
-        write_skill_file(&to, name, content)?;
+        write(&to, content)?;
         changed.push(path);
     }
     Ok(())
@@ -801,16 +897,8 @@ const WORKFLOWS: &[Workflow] = &[
 const WORKFLOW_MARKER: &str = "# Managed by gitmoji init --github-workflows";
 const WORKFLOW_PIN: &str = "  GITMOJI_VERSION: ";
 
-/// Only numbered release tags from the public Gitmoji repository may supply executable code.
-fn workflow_version(top: &Path) -> Result<String> {
-    let path =
-        locate(top).context("GitHub workflows need a gitmoji.toml with [vocabulary].version")?;
-    let version = Config::load(&path)?.vocabulary_version.with_context(|| {
-        format!(
-            "set [vocabulary].version in {} before installing the GitHub workflows",
-            path.display()
-        )
-    })?;
+/// Parse a strict `major.minor.patch` release version without leading zeros.
+fn parse_release_version(version: &str) -> Option<(u64, u64, u64)> {
     let numbers: Vec<_> = version
         .split('.')
         .map(|part| {
@@ -824,9 +912,39 @@ fn workflow_version(top: &Path) -> Result<String> {
         })
         .collect();
     match numbers.as_slice() {
-        [Some(major), Some(minor), Some(_)] if (*major, *minor) >= (0, 14) => Ok(version),
+        [Some(major), Some(minor), Some(patch)] => Some((*major, *minor, *patch)),
+        _ => None,
+    }
+}
+
+/// Return the pinned version when the repository already pins a release older than 0.17.0.
+fn older_pinned_version(top: &Path) -> Result<Option<String>> {
+    let Some(path) = locate(top) else {
+        return Ok(None);
+    };
+    let Some(version) = Config::load(&path)?.vocabulary_version else {
+        return Ok(None);
+    };
+    Ok(match parse_release_version(&version) {
+        Some((major, minor, _)) if (major, minor) < (0, 17) => Some(version),
+        _ => None,
+    })
+}
+
+/// Only numbered release tags from the public Gitmoji repository may supply executable code.
+fn workflow_version(top: &Path) -> Result<String> {
+    let path =
+        locate(top).context("GitHub workflows need a gitmoji.toml with [vocabulary].version")?;
+    let version = Config::load(&path)?.vocabulary_version.with_context(|| {
+        format!(
+            "set [vocabulary].version in {} before installing the GitHub workflows",
+            path.display()
+        )
+    })?;
+    match parse_release_version(&version) {
+        Some((major, minor, _)) if (major, minor) >= (0, 17) => Ok(version),
         _ => bail!(
-            "the GitHub workflows need a numbered Gitmoji release at least 0.14.0 in {} (found {version:?})",
+            "the GitHub workflows need a numbered Gitmoji release at least 0.17.0 in {} (found {version:?})",
             path.display()
         ),
     }
@@ -1318,6 +1436,7 @@ mod tests {
         write_skill(&top, &paths, &vocab, &mut changed).unwrap();
         assert_eq!(changed.len(), SKILL.len() + 1);
         assert!(top.join(SKILL_DIR).join(REFERENCE).is_file());
+        assert!(!top.join(SKILL_DIR).join("scripts").exists());
 
         let mut again = Vec::new();
         write_skill(&top, &paths, &vocab, &mut again).unwrap();
@@ -1333,6 +1452,193 @@ mod tests {
         let backup = top.join(SKILL_DIR).join("SKILL.md.before-update");
         assert_eq!(std::fs::read_to_string(backup).unwrap(), "mine");
         assert_eq!(std::fs::read_to_string(note).unwrap(), "mine too");
+        std::fs::remove_dir_all(top).unwrap();
+    }
+
+    const RELEASED_SCRIPTS_README: &str = "# Skill scripts
+
+Use the [PR guide](../references/pull-requests.md) for `github-merge.py` and the
+[history upgrade guide](../references/upgrade-history.md) for `gitmoji-upgrade-history.py`.
+
+## Signature scripts, one per harness
+
+A commit made by an agent ends with a signature that says what went into it:
+
+```
+_
+<model> (<effort>), <agent name, only if a person gave one>
+<harness> (<session id, if there is one>)
+Sub-agents: <count> × <model> (<effort>), ...      only if sub-agents did part of the work
+Team: <other agents>                               only if it exchanged messages with others
+Research: <n> searches, <n> pages, <n> doc lookups only if it looked something up
+```
+
+The scripts print the underscore. When the commit is made, the hook replaces it by `△` and,
+between backticks, the version of the vocabulary the message was checked against.
+
+Every value comes from the harness's own record of the session, never from the agent's
+memory. An agent can be wrong about its own model and effort, and a sub-agent can run on
+a different model than the agent that started it. The last three lines cover the time
+since the session's last commit in the repository. On its first commit here, that
+window can include earlier tasks or work in another checkout. Check optional counts
+against the work in this commit.
+
+Each signature script prints that block for one harness. Run yours and paste the output at the
+end of the commit body:
+
+| Harness | Script | Where the values come from |
+|---|---|---|
+| Claude Code | `claude-code.py` | `CLAUDE_EFFORT`, `CLAUDE_CODE_SESSION_ID`, and the session log under `~/.claude/projects/`: model per reply, `custom-title.json`, `subagents/`, and tool calls for team and research. A shell command such as `curl` is not counted as a page read |
+| Codex | `codex.py` | `CODEX_THREAD_ID` (or `CODEX_SESSION_ID`) selects the rollout in `$CODEX_HOME` or `~/.codex`. Turn contexts give model and effort, a naming message gives the name, and spawn records identify direct helpers. Native sends and agmsg receipts give teammates. Completed web actions, Context7 docs commands and documentation tool calls give research counts for the parent and helpers. |
+| Antigravity | `antigravity.py` | `ANTIGRAVITY_CONVERSATION_ID`, `ANTIGRAVITY_APP_DATA_DIR` (`transcript_full.jsonl` model/effort/team/research, `history.jsonl` `/rename`, and `conversation_summaries.db` sub-agents) |
+
+## If your harness is not listed
+
+Work it out once, then add a script here so the next agent does not have to.
+
+1. Find where your harness records, for this session: the model of each reply, the
+   effort level, the session id, the name a person gave you, and each sub-agent you
+   started with its model and effort. Look at environment variables, the session or
+   transcript log, and per-turn context records.
+2. Write a script that prints the block above from those records. It must not take the
+   values as arguments or guess a default. When a value cannot be found, it prints
+   `unknown` in its place.
+3. Cover the time since your session's last commit in this repository. Count the
+   sub-agents that ran, grouped by model and effort. List the other agents you sent
+   messages to. Count web searches, web pages read and documentation lookups, yours and
+   your sub-agents'. Leave out a line when there is nothing to report.
+4. Add a row to the table, and say in one line where each value comes from.
+";
+
+    #[test]
+    fn upgrade_retires_shipped_scripts_and_preserves_modified_or_user_files() {
+        let top = scratch("retire-scripts");
+        git(&top, &["init", "-q"]).unwrap();
+        let skill = top.join(SKILL_DIR);
+        let readme_crlf = RELEASED_SCRIPTS_README.replace('\n', "\r\n");
+        assert!(is_released_script(
+            "scripts/README.md",
+            readme_crlf.as_bytes()
+        ));
+        assert!(!is_released_script(
+            "scripts/README.md",
+            b"# custom downstream README\n"
+        ));
+
+        write(&skill.join("scripts/README.md"), &readme_crlf).unwrap();
+        write(
+            &skill.join("scripts/github-merge.py"),
+            "# committed downstream customization\n",
+        )
+        .unwrap();
+        write(
+            &skill.join("scripts/codex.py"),
+            "# uncommitted worktree edit target\n",
+        )
+        .unwrap();
+        write(
+            &skill.join("scripts/claude-code.py"),
+            "# staged edit target\n",
+        )
+        .unwrap();
+        write(
+            &skill.join("scripts/antigravity.py"),
+            "# untracked target\n",
+        )
+        .unwrap();
+        write(&skill.join("scripts/custom.py"), "user helper\n").unwrap();
+        git(&top, &["add", SKILL_DIR]).unwrap();
+        git(
+            &top,
+            &[
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "previous layout",
+            ],
+        )
+        .unwrap();
+
+        // Modified tracked, staged, and untracked scripts stay untouched.
+        let modified = "scripts/codex.py";
+        let staged_script = "scripts/claude-code.py";
+        let untracked = "scripts/antigravity.py";
+        let customized = "scripts/github-merge.py";
+        write(&skill.join(modified), "local edit\n").unwrap();
+        write(&skill.join(staged_script), "staged edit\n").unwrap();
+        git(&top, &["add", &format!("{SKILL_DIR}/{staged_script}")]).unwrap();
+        git(
+            &top,
+            &["rm", "-q", "--cached", &format!("{SKILL_DIR}/{untracked}")],
+        )
+        .unwrap();
+
+        let paths = SkillPaths::new(&top).unwrap();
+        let mut changed = Vec::new();
+        rename_earlier(&top, &paths, &mut changed).unwrap();
+
+        assert!(!skill.join("scripts/README.md").exists());
+        assert_eq!(changed, vec![format!("{SKILL_DIR}/scripts/README.md")]);
+        assert_eq!(
+            std::fs::read_to_string(skill.join(customized)).unwrap(),
+            "# committed downstream customization\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(skill.join("scripts/custom.py")).unwrap(),
+            "user helper\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(skill.join(modified)).unwrap(),
+            "local edit\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(skill.join(staged_script)).unwrap(),
+            "staged edit\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(skill.join(untracked)).unwrap(),
+            "# untracked target\n"
+        );
+        assert!(skill.join("scripts").is_dir());
+
+        // When only released scripts remain in an empty folder, the folder is removed too.
+        let clean_only = scratch("retire-scripts-clean");
+        git(&clean_only, &["init", "-q"]).unwrap();
+        write(
+            &clean_only.join(SKILL_DIR).join("scripts/README.md"),
+            RELEASED_SCRIPTS_README,
+        )
+        .unwrap();
+        git(&clean_only, &["add", SKILL_DIR]).unwrap();
+        git(
+            &clean_only,
+            &[
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "clean released script",
+            ],
+        )
+        .unwrap();
+        let mut clean_changed = Vec::new();
+        let clean_paths = SkillPaths::new(&clean_only).unwrap();
+        rename_earlier(&clean_only, &clean_paths, &mut clean_changed).unwrap();
+        assert!(!clean_only.join(SKILL_DIR).join("scripts").exists());
+        assert_eq!(
+            clean_changed,
+            vec![format!("{SKILL_DIR}/scripts/README.md")]
+        );
+        std::fs::remove_dir_all(clean_only).unwrap();
         std::fs::remove_dir_all(top).unwrap();
     }
 
@@ -1430,7 +1736,7 @@ mod tests {
         write(&top.join(generic), previous).unwrap();
         write(
             &top.join(".config/gitmoji.toml"),
-            "[vocabulary]\nversion='0.14.0'",
+            "[vocabulary]\nversion='0.17.0'",
         )
         .unwrap();
         write_workflows(&top, &paths, true, &mut changed).unwrap();
@@ -1442,7 +1748,7 @@ mod tests {
         for workflow in WORKFLOWS {
             assert_eq!(
                 std::fs::read_to_string(top.join(workflow.path)).unwrap(),
-                pin_workflow(workflow.template, "0.14.0")
+                pin_workflow(workflow.template, "0.17.0")
             );
         }
 
@@ -1467,12 +1773,12 @@ mod tests {
     fn plain_init_retires_only_enrolled_legacy_workflows_and_preserves_edits() {
         let top = scratch("workflow-rename");
         git(&top, &["init", "-q"]).unwrap();
-        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.1'").unwrap();
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.17.1'").unwrap();
         let title = &WORKFLOWS[0];
         let check = &WORKFLOWS[1];
         let customized = format!("{WORKFLOW_MARKER}\nname: extra project steps\n");
         write(&top.join(title.legacy_path), &customized).unwrap();
-        let old_check = pin_workflow(check.template, "0.15.0")
+        let old_check = pin_workflow(check.template, "0.17.0")
             .replace("\n  gitmoji-commits:\n", "\n  check:\n");
         write(&top.join(check.legacy_path), &old_check).unwrap();
         git(&top, &["add", ".github"]).unwrap();
@@ -1502,7 +1808,7 @@ mod tests {
         for workflow in WORKFLOWS {
             let installed = std::fs::read_to_string(top.join(workflow.path)).unwrap();
             assert!(installed.contains(&format!("\njobs:\n  {}:\n", workflow.job)));
-            assert!(installed.contains("GITMOJI_VERSION: '0.15.1'"));
+            assert!(installed.contains("GITMOJI_VERSION: '0.17.1'"));
             assert!(!top.join(workflow.legacy_path).exists());
         }
         assert_eq!(
@@ -1524,7 +1830,7 @@ mod tests {
     fn workflow_migration_respects_project_files_index_and_existing_backups() {
         let top = scratch("workflow-collisions");
         git(&top, &["init", "-q"]).unwrap();
-        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.1'").unwrap();
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.17.1'").unwrap();
         let title = &WORKFLOWS[0];
         let check = &WORKFLOWS[1];
         let customized = format!("{WORKFLOW_MARKER}\nname: custom\n");
@@ -1579,7 +1885,7 @@ mod tests {
         use std::os::unix::fs::symlink;
         let top = scratch("workflow-symlinks");
         git(&top, &["init", "-q"]).unwrap();
-        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.1'").unwrap();
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.17.1'").unwrap();
         let paths = SkillPaths::new(&top).unwrap();
         let mut changed = Vec::new();
         let title = &WORKFLOWS[0];
@@ -1605,7 +1911,14 @@ mod tests {
         git(&top, &["add", "--", title]).unwrap();
         let paths = SkillPaths::new(&top).unwrap();
         let mut changed = Vec::new();
-        for bad in ["1.2.3'\nmangled", "trunk", "0.13.3", "1.2", "+1.2.3"] {
+        for bad in [
+            "1.2.3'\nmangled",
+            "trunk",
+            "0.16.0",
+            "0.13.3",
+            "1.2",
+            "+1.2.3",
+        ] {
             write(
                 &top.join("gitmoji.toml"),
                 &format!("[vocabulary]\nversion={bad:?}"),
@@ -1614,13 +1927,120 @@ mod tests {
             assert!(write_workflows(&top, &paths, true, &mut changed).is_err());
             assert!(!top.join(WORKFLOWS[1].path).exists());
         }
-        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.15.0'").unwrap();
+        write(&top.join("gitmoji.toml"), "[vocabulary]\nversion='0.17.0'").unwrap();
         write_workflows(&top, &paths, true, &mut changed).unwrap();
         assert_eq!(changed, [WORKFLOWS[1].path]);
         assert_eq!(
             std::fs::read_to_string(top.join(title)).unwrap(),
             "name: staged workflow\n"
         );
+        std::fs::remove_dir_all(top).unwrap();
+    }
+
+    #[test]
+    fn init_preserves_skill_and_workflows_when_repo_pins_older_version() {
+        let top = scratch("older-pin");
+        git(&top, &["init", "-q"]).unwrap();
+        write(
+            &top.join("gitmoji.toml"),
+            "[vocabulary]\nversion = \"0.16.0\"\n",
+        )
+        .unwrap();
+        let old_skill = "old 0.16 skill\n";
+        let old_script = "old 0.16 script\n";
+        let old_workflow = format!("{WORKFLOW_MARKER}\nname: old 0.16 workflow\n");
+        write(&top.join(SKILL_DIR).join("SKILL.md"), old_skill).unwrap();
+        write(
+            &top.join(SKILL_DIR).join("scripts/claude-code.py"),
+            old_script,
+        )
+        .unwrap();
+        write(&top.join(WORKFLOWS[0].path), &old_workflow).unwrap();
+        write(&top.join("lefthook.yml"), LEFTHOOK).unwrap();
+        write(&top.join("CLAUDE.md"), &with_commits_section("")).unwrap();
+        write(
+            &top.join(".claude/settings.json"),
+            "{ \"attribution\": { \"commit\": \"\" } }\n",
+        )
+        .unwrap();
+        git(&top, &["add", "."]).unwrap();
+        git(
+            &top,
+            &[
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "pinned 0.16",
+            ],
+        )
+        .unwrap();
+
+        let vocab = Vocabulary::builtin().unwrap();
+        run(&vocab, &top, Tickets::Github, false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(top.join(SKILL_DIR).join("SKILL.md")).unwrap(),
+            old_skill
+        );
+        assert_eq!(
+            std::fs::read_to_string(top.join(SKILL_DIR).join("scripts/claude-code.py")).unwrap(),
+            old_script
+        );
+        assert_eq!(
+            std::fs::read_to_string(top.join(WORKFLOWS[0].path)).unwrap(),
+            old_workflow
+        );
+        assert!(run(&vocab, &top, Tickets::Github, true).is_err());
+
+        // Explicit --github-workflows on an older pin fails before touching hooks or Claude files.
+        let clean = scratch("older-pin-fail-early");
+        git(&clean, &["init", "-q"]).unwrap();
+        write(
+            &clean.join("gitmoji.toml"),
+            "[vocabulary]\nversion = \"0.16.0\"\n",
+        )
+        .unwrap();
+        write(&clean.join(SKILL_DIR).join("SKILL.md"), old_skill).unwrap();
+        assert!(run(&vocab, &clean, Tickets::Github, true).is_err());
+        assert!(!clean.join("lefthook.yml").exists());
+        assert!(!clean.join("CLAUDE.md").exists());
+        assert!(!clean.join(".claude/settings.json").exists());
+        assert!(!clean.join(".github").exists());
+        assert_eq!(
+            std::fs::read_to_string(clean.join(SKILL_DIR).join("SKILL.md")).unwrap(),
+            old_skill
+        );
+
+        std::fs::remove_dir_all(clean).unwrap();
+        std::fs::remove_dir_all(top).unwrap();
+    }
+
+    #[test]
+    fn fresh_init_writes_scriptless_skill_and_current_pin() {
+        let top = scratch("fresh-init");
+        git(&top, &["init", "-q"]).unwrap();
+        let vocab = Vocabulary::builtin().unwrap();
+        run(&vocab, &top, Tickets::Github, false).unwrap();
+
+        let settings = std::fs::read_to_string(top.join("gitmoji.toml")).unwrap();
+        assert!(settings.contains(&format!("version = \"{}\"", vocab.version)));
+        assert!(top.join(SKILL_DIR).join("SKILL.md").is_file());
+        assert!(top.join(SKILL_DIR).join(REFERENCE).is_file());
+        assert!(
+            top.join(SKILL_DIR)
+                .join("references/pull-requests.md")
+                .is_file()
+        );
+        assert!(
+            top.join(SKILL_DIR)
+                .join("references/upgrade-history.md")
+                .is_file()
+        );
+        assert!(!top.join(SKILL_DIR).join("scripts").exists());
         std::fs::remove_dir_all(top).unwrap();
     }
 

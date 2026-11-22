@@ -47,5 +47,4 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITMOJI_TITLE_TOKEN: ${{ github.token }}
         run: |
-          python3 -I "$TITLE_TOOL/source/skills/gitmoji/scripts/github-pr-title.py" \
-            --pr "$PR_NUMBER" --gitmoji "$TITLE_TOOL/bin/gitmoji"
+          "$TITLE_TOOL/bin/gitmoji" pr-title --pr "$PR_NUMBER"

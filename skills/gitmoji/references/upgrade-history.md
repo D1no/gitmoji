@@ -1,15 +1,14 @@
 # Reviewing existing merge and revert history
 
-Run the history upgrade from the project whose history you want to review. Both modes need Python 3.9 or newer, a complete local Git object history and an installed `gitmoji` with the `merge-caption` and `merge-message --historical` commands. The example paths use the skill installed by `gitmoji init`.
+Run `gitmoji history --upgrade` from a complete clone of the project whose history you want to review. The released binary reads local Git objects in both modes.
 
 ## Unpublished branches and offline repositories
 
 Use `--local-merges-only` to repair branch integrations entirely from Git objects on disk. A remote, a pull request and the GitHub CLI are optional for repositories using this mode. The tool reads the source and destination from Git's recorded merge heading and collects the incoming commits from its parents. Deleted branch refs are supported. An omitted destination appears for manual review. PR landing messages, reverts and authored commits keep their text.
 
 ```sh
-tool=.claude/skills/gitmoji/scripts/gitmoji-upgrade-history.py
-python3 "$tool" --local-merges-only --ref HEAD > local-plan.json
-python3 "$tool" --local-merges-only --ref ORIGINAL_TIP_SHA \
+gitmoji history --upgrade --local-merges-only --ref HEAD > local-plan.json
+gitmoji history --upgrade --local-merges-only --ref ORIGINAL_TIP_SHA \
   --expect-candidate REVIEWED_CANDIDATE_SHA --apply review/local-merges
 git diff --exit-code ORIGINAL_TIP_SHA review/local-merges
 git log --graph --format='%h %s' review/local-merges
@@ -19,10 +18,10 @@ Use the `source_tip` and `candidate_tip` from the preview in the second command.
 
 ## Preview GitHub PRs, reverts and branch merges
 
-For `--repo OWNER/REPO`, supply an authenticated `gh` with GraphQL pagination and `--slurp` support and read access to the repository's pull requests. Pass `--hostname HOST` for an enterprise host, or set `GH_HOST`.
+For `--repo OWNER/REPO`, use credentials with read access to the repository's pull requests. Gitmoji can use a token for the selected host or an existing GitHub CLI login. Pass `--hostname HOST` for an enterprise host, or set `GH_HOST`.
 
 ```sh
-python3 .claude/skills/gitmoji/scripts/gitmoji-upgrade-history.py \
+gitmoji history --upgrade \
   --repo OWNER/REPO --ref trunk > history-plan.json
 ```
 
@@ -46,7 +45,7 @@ Review each proposed caption against its incoming history and any linked PR.
 After reviewing the plan, use the reported `source_tip` and the same base and hostname options. Choose a fresh local branch name.
 
 ```sh
-python3 .claude/skills/gitmoji/scripts/gitmoji-upgrade-history.py \
+gitmoji history --upgrade \
   --repo OWNER/REPO --ref ORIGINAL_TIP_SHA --expect-candidate REVIEWED_CANDIDATE_SHA \
   --apply review/gitmoji-history > history-candidate.json
 git diff --exit-code ORIGINAL_TIP_SHA review/gitmoji-history
@@ -75,8 +74,7 @@ Promoting any candidate onto shared history is a separate repository-owner decis
 Use the same full clone and the same repository, host and revision range. This also works for a merge whose local subject already has its final form. Creating or publishing a replacement branch is optional.
 
 ```sh
-tool=.claude/skills/gitmoji/scripts/gitmoji-upgrade-history.py
-python3 "$tool" --repo OWNER/REPO --ref trunk --update-pr-titles > titles.json
+gitmoji history --upgrade --repo OWNER/REPO --ref trunk --update-pr-titles > titles.json
 ```
 
 Read `pr_title_summary` before interpreting an empty update list. The counts cover the selected revision range.
@@ -92,7 +90,7 @@ For example, `{"to_change": 0, "already_correct": 12, "unmatched": 3}` means twe
 Inspect the `pr_title_updates` entries, including the PR number, the evidence, and each title before and after. Gitmoji takes the title from the landed caption and drops the trailing reference to the PR itself. When the changes are ready, use an account with pull request write access.
 
 ```sh
-python3 "$tool" --repo OWNER/REPO --ref trunk --apply-pr-titles titles.json
+gitmoji history --upgrade --repo OWNER/REPO --ref trunk --apply-pr-titles titles.json
 ```
 
 The apply step recreates the plan and rereads each merged PR immediately before editing its title. If another title changed or GitHub stopped a batch partway, inspect the result and generate a fresh preview. An already-correct title needs no write. GitHub’s title endpoint has no atomic expected-title check. [GitHub PR API](https://docs.github.com/en/rest/pulls/pulls#update-a-pull-request)

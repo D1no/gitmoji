@@ -73,7 +73,7 @@ The body lists up to twenty incoming first-parent entries, newest first. Where a
 
 ### Signing a local merge from an agent terminal
 
-For an interactive merge, use `git merge --edit origin/<base>` and append the signature in the editor. In a terminal without an editor, start with `git merge --no-commit origin/<base>`. A fast-forward completes immediately. If there are conflicts, resolve and stage them first. Once a merge commit is pending, run the following from the repository root. Choose the script for the harness actually making the commit (`codex.py`, `claude-code.py` or `antigravity.py`). The example uses the installed skill's default path.
+For an interactive merge, use `git merge --edit origin/<base>` and append the signature in the editor. In a terminal without an editor, start with `git merge --no-commit origin/<base>`. A fast-forward completes immediately. If there are conflicts, resolve and stage them first. Once a merge commit is pending, run the following from the repository root. Gitmoji reads the signature from the active harness session.
 
 ```sh
 (
@@ -84,7 +84,7 @@ For an interactive merge, use `git merge --edit origin/<base>` and append the si
   gitmoji merge-message "$pending" merge
   git stripspace --strip-comments < "$pending" > "$signed"
   printf '\n' >> "$signed"
-  python3 .claude/skills/gitmoji/scripts/codex.py >> "$signed"
+  gitmoji signature >> "$signed"
   git commit --file="$signed"
 )
 ```
@@ -93,10 +93,10 @@ The commit-msg hook checks and stamps the supplied signature. Use `gitmoji histo
 
 ## When the merge button is unavailable
 
-For a direct merge of an ordinary PR, preview the title and body with the installed helper. Run from a full clone with Python 3.9 or later, the Gitmoji CLI and an authenticated GitHub CLI.
+For a direct merge of an ordinary PR, preview the title and body from a full clone. Gitmoji uses the selected GitHub host and credentials. An existing GitHub CLI login can supply those credentials.
 
 ```sh
-python3 .claude/skills/gitmoji/scripts/github-merge.py --repo OWNER/REPO --pr 42
+gitmoji github-merge --repo OWNER/REPO --pr 42
 ```
 
 Review the message, commit coverage and preview digest. Add `--merge --expect-preview REVIEWED_SHA256` to submit that exact proposal. See `--help` for enterprise hosts and preserving a custom message. Use the repository’s normal merge button, stack or queue whenever available.
