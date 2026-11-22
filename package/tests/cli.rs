@@ -615,3 +615,142 @@ fn merge_caption_rejects_ambiguous_or_incomplete_inputs() {
     std::fs::remove_dir_all(shallow).unwrap();
     std::fs::remove_dir_all(repo).unwrap();
 }
+
+#[test]
+fn wider_inventory_is_used_only_when_the_incoming_graph_contains_a_merge() {
+    let repo = scratch("nested-limit");
+    git(&repo, &["init", "-q", "-b", "trunk"]);
+    git(&repo, &["commit", "--allow-empty", "-qm", "root"]);
+    git(&repo, &["checkout", "-qb", "old"]);
+    git(&repo, &["commit", "--allow-empty", "-qm", "old feature"]);
+    git(&repo, &["checkout", "-q", "trunk"]);
+    git(&repo, &["merge", "--no-ff", "-qm", "existing merge", "old"]);
+    git(&repo, &["checkout", "-qb", "topic"]);
+    let activities = [
+        "✨", "📝", "🔧", "♻️", "🐛", "☑️", "🔊", "🔥", "🔌", "🛡️", "👔", "💾", "🔐",
+    ];
+    for symbol in activities {
+        git(
+            &repo,
+            &[
+                "commit",
+                "--allow-empty",
+                "-qm",
+                &format!("🧩{symbol} #1 (read): a decision"),
+            ],
+        );
+    }
+    let read = |title: &str| {
+        let r = gitmoji(
+            &repo,
+            &[
+                "merge-caption",
+                "--json",
+                "--pr",
+                "17",
+                "--title",
+                title,
+                "trunk",
+                "HEAD",
+            ],
+        );
+        assert!(r.status.success(), "{}", text(&r));
+        serde_json::from_slice::<serde_json::Value>(&r.stdout).unwrap()
+    };
+    let simple = read("Choose");
+    assert_eq!(simple["title"], "[`🧩` / `✨📝🔧♻️🐛☑️🔊`…] Choose");
+    assert!(simple.get("previous_title").is_none());
+    git(&repo, &["checkout", "-qb", "contributor"]);
+    git(
+        &repo,
+        &[
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "🧩✨ #1 (read): another decision",
+        ],
+    );
+    git(&repo, &["checkout", "-q", "topic"]);
+    git(
+        &repo,
+        &[
+            "merge",
+            "--no-ff",
+            "-qm",
+            "🧩⚡️ must never enter the inventory",
+            "contributor",
+        ],
+    );
+    let wide = read(simple["title"].as_str().unwrap());
+    let whole = "[`🧩` / `✨📝🔧♻️🐛☑️🔊🔥🔌🛡️👔💾🔐`] Choose";
+    assert_eq!(wide["title"], whole);
+    assert_eq!(wide["previous_title"], simple["title"]);
+    assert_eq!(wide["total"], 14);
+    git(
+        &repo,
+        &["commit", "--allow-empty", "-qm", "🧩🥅 #1 (read): one more"],
+    );
+    let overflow = read(whole);
+    assert_eq!(
+        overflow["title"],
+        "[`🧩` / `✨📝🔧♻️🐛☑️🔊🔥🔌🛡️👔💾`…] Choose"
+    );
+    assert_eq!(read(overflow["title"].as_str().unwrap()), overflow);
+    std::fs::remove_dir_all(repo).unwrap();
+}
+
+#[test]
+fn branch_caption_uses_parents_and_body_even_when_it_names_an_arriving_pr() {
+    let repo = scratch("branch-caption-classification");
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["commit", "--allow-empty", "-qm", "root"]);
+    git(&repo, &["checkout", "-qb", "side"]);
+    let msg = "[`🧩✨`] side into main: Add previews (#42)\n\nArrived from side (1):\n- abc1234 Add previews (#42)";
+    git(&repo, &["commit", "--allow-empty", "-qm", msg]);
+    git(&repo, &["checkout", "-q", "main"]);
+    git(&repo, &["merge", "--no-ff", "-qm", msg, "side"]);
+    for args in [
+        &["history", "HEAD^!"][..],
+        &["explain", "--commit", "HEAD"][..],
+    ] {
+        let r = gitmoji(&repo, args);
+        assert!(r.status.success(), "{}", text(&r));
+        assert!(text(&r).contains("local branch caption"), "{}", text(&r));
+    }
+    for args in [
+        &["history", "side^!"][..],
+        &["explain", "--commit", "side"][..],
+    ] {
+        assert!(!gitmoji(&repo, args).status.success());
+    }
+    std::fs::write(repo.join("gitmoji.toml"), "[rules]\nsignature = 'error'\n").unwrap();
+    assert!(!gitmoji(&repo, &["history", "HEAD^!"]).status.success());
+
+    git(&repo, &["checkout", "-q", "side"]);
+    git(&repo, &["commit", "--allow-empty", "-qm", "next"]);
+    git(&repo, &["checkout", "-q", "main"]);
+    git(&repo, &["merge", "--no-ff", "--no-commit", "side"]);
+    let draft = repo.join(".git/COMMIT_EDITMSG");
+    std::fs::write(&draft, msg).unwrap();
+    let unsigned = gitmoji(&repo, &["check", "--fix", draft.to_str().unwrap()]);
+    assert!(!unsigned.status.success(), "{}", text(&unsigned));
+    assert!(
+        text(&unsigned).contains("an agent signs"),
+        "{}",
+        text(&unsigned)
+    );
+
+    std::fs::write(
+        &draft,
+        format!("{msg}\n\n_\nexample-model (high)\nExample Harness\n"),
+    )
+    .unwrap();
+    let signed = gitmoji(&repo, &["check", "--fix", draft.to_str().unwrap()]);
+    assert!(signed.status.success(), "{}", text(&signed));
+    assert!(
+        std::fs::read_to_string(&draft)
+            .unwrap()
+            .contains("example-model (high)")
+    );
+    std::fs::remove_dir_all(repo).unwrap();
+}

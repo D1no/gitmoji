@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use gitmoji_triangle::caption;
-use gitmoji_triangle::check::check_message;
+use gitmoji_triangle::check::{check_branch_message, check_message};
 use gitmoji_triangle::config::{Config, Level, locate};
 use gitmoji_triangle::fix::fix_message;
 use gitmoji_triangle::guide;
@@ -16,6 +16,7 @@ use gitmoji_triangle::vocabulary::Vocabulary;
 
 mod history;
 mod init;
+mod local_merge;
 
 #[derive(Parser)]
 #[command(
@@ -54,8 +55,11 @@ enum Action {
     },
     /// Read a subject or a run of emojis back in words.
     Explain {
-        /// A subject line, or emojis such as 🧩👔💥.
+        /// A subject line, emojis such as 🧩👔💥, or a revision with --commit.
         text: String,
+        /// Read the stored commit and its parents to explain a merge caption.
+        #[arg(long)]
+        commit: bool,
     },
     /// Look at the staged files and say when they look like more than one commit.
     Staged,
@@ -68,6 +72,17 @@ enum Action {
         /// this command speaks: those from an earlier version, and those without the line.
         #[arg(long)]
         unmigrated: bool,
+    },
+    /// Caption Git’s generated local branch merge message, or preview a stored merge.
+    MergeMessage {
+        /// Git’s message file (first prepare-commit-msg argument).
+        #[arg(required_unless_present = "historical")]
+        file: Option<PathBuf>,
+        /// Git’s message source (second prepare-commit-msg argument).
+        source: Option<String>,
+        /// Preview the generated subject and inventory from a stored merge with known direction.
+        #[arg(long, conflicts_with_all = ["file", "source"])]
+        historical: Option<String>,
     },
     /// Print the synchronized PR title for the authored commits arriving on its base.
     MergeCaption {
@@ -256,6 +271,23 @@ fn run(cli: Cli) -> Result<ExitCode> {
         )?;
         return Ok(ExitCode::SUCCESS);
     }
+    if let Action::MergeMessage {
+        file,
+        source,
+        historical,
+    } = &cli.command
+    {
+        if let Some(commit) = historical {
+            if let Some(message) = local_merge::historical(commit, &vocab)? {
+                println!("{message}");
+            }
+        } else if let (Some(file), Some("merge")) = (file, source.as_deref())
+            && is_pending_merge_message(file)
+        {
+            local_merge::prepare(file, &vocab)?;
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
     let mut config = load_config(cli.config.as_deref())?;
     if let Some(comment) = comment_char() {
         config.comment_char = comment;
@@ -264,11 +296,22 @@ fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Action::Check { file, message, fix } => {
             let from_file = message.is_none();
+            let mut branch_merge = false;
             let mut text = match (message, &file) {
                 (Some(text), _) => text,
                 (None, Some(file)) if is_pending_merge_message(file) => {
-                    eprintln!("gitmoji: not checked: a merge commit");
-                    return Ok(ExitCode::SUCCESS);
+                    let bytes = std::fs::read(file)
+                        .with_context(|| format!("cannot read {}", file.display()))?;
+                    let Ok(raw) = String::from_utf8(bytes) else {
+                        eprintln!("gitmoji: not checked: a merge commit");
+                        return Ok(ExitCode::SUCCESS);
+                    };
+                    if !caption::is_branch_message(&raw, &vocab) {
+                        eprintln!("gitmoji: not checked: a merge commit");
+                        return Ok(ExitCode::SUCCESS);
+                    }
+                    branch_merge = true;
+                    raw
                 }
                 (None, Some(file)) => std::fs::read_to_string(file)
                     .with_context(|| format!("cannot read {}", file.display()))?,
@@ -294,7 +337,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
             } else {
                 config.for_a_subject_alone()
             };
-            let report = check_message(&vocab, &config, &text, author.as_deref());
+            let report = if branch_merge {
+                check_branch_message(&config, &text, false)
+            } else {
+                check_message(&vocab, &config, &text, author.as_deref())
+            };
             for warning in &report.warnings {
                 eprintln!("gitmoji: note: {warning}");
             }
@@ -307,9 +354,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             for error in &report.errors {
                 eprintln!("gitmoji: {error}");
             }
-            eprintln!("\n  {}", vocab.format.subject);
-            eprintln!("  {}", vocab.format.example);
-            eprintln!("\nRun `gitmoji guide` for the four questions to answer before a commit.");
+            if !branch_merge {
+                eprintln!("\n  {}", vocab.format.subject);
+                eprintln!("  {}", vocab.format.example);
+                eprintln!(
+                    "\nRun `gitmoji guide` for the four questions to answer before a commit."
+                );
+            }
             Ok(ExitCode::FAILURE)
         }
         Action::Guide { topic } => {
@@ -348,7 +399,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 }
             }
         }
-        Action::Explain { text } => {
+        Action::Explain { text, commit } => {
+            if commit {
+                return history::explain_commit(&vocab, &config, &text);
+            }
             // A subject has words after its emojis; a run of emojis alone does not.
             if text.trim().contains(char::is_whitespace) {
                 let report = check_message(&vocab, &config.for_a_subject_alone(), &text, None);
@@ -399,7 +453,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Action::Init { .. } => Ok(ExitCode::SUCCESS),
+        Action::Init { .. } | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
         Action::History { range, unmigrated } => {
             history::run(&vocab, config, range.as_deref(), unmigrated)
         }
@@ -410,9 +464,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
             base,
             head,
         } => {
-            let subjects = history::merge_subjects(&base, &head)?;
-            let caption =
-                caption::summarize(pr, &title, &subjects, &vocab).map_err(anyhow::Error::msg)?;
+            let incoming = history::incoming_commits(&base, &[&head])?;
+            let caption = caption::summarize_pr(
+                pr,
+                &title,
+                &incoming.subjects,
+                incoming.contains_merge,
+                &vocab,
+            )
+            .map_err(anyhow::Error::msg)?;
             if json {
                 println!("{}", serde_json::to_string(&caption)?);
             } else {

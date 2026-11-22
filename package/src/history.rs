@@ -13,7 +13,8 @@ use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
 
-use gitmoji_triangle::check::{check_stored_message, checked_against};
+use gitmoji_triangle::caption;
+use gitmoji_triangle::check::{check_branch_message, check_stored_message, checked_against};
 use gitmoji_triangle::config::{Config, Level};
 use gitmoji_triangle::subject;
 use gitmoji_triangle::vocabulary::Vocabulary;
@@ -45,6 +46,10 @@ enum Standing {
     Unsaid,
     /// Git records multiple parents, independently of who chose the title.
     Merge,
+    /// A local branch integration records its actual route and arriving commits.
+    BranchMerge,
+    /// GitHub's default subject or its canonical caption with landing reference.
+    PullRequestMerge,
     /// The subject matches a recognized Git operation.
     Generated,
 }
@@ -57,6 +62,8 @@ impl Standing {
                 "without a version: made before the hook wrote one, or without the hook".to_string()
             }
             Self::Merge => "with multiple parents (merge), exempt from author checks".to_string(),
+            Self::BranchMerge => "with multiple parents (local branch caption)".to_owned(),
+            Self::PullRequestMerge => "with multiple parents (pull request merge)".to_owned(),
             Self::Generated => {
                 "matching a recognized Git subject, exempt from author checks".to_string()
             }
@@ -64,7 +71,7 @@ impl Standing {
     }
 }
 
-fn git(args: &[&str]) -> Result<String> {
+pub(crate) fn git(args: &[&str]) -> Result<String> {
     // Captions and checks describe the objects a host will receive. Local
     // replacements and grafts can change both the subjects and their ancestry.
     let output = Command::new("git")
@@ -85,10 +92,20 @@ fn git(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// Return the authored subjects newly reachable on the PR's actual destination.
-pub fn merge_subjects(base: &str, head: &str) -> Result<Vec<String>> {
-    // Missing parents on either side can hide commits or make already-landed work
-    // look new. An incomplete list would silently change the meaning of the caption.
+/// Authored commits that become reachable, in topological order, oldest first.
+pub struct IncomingCommits {
+    /// Authored subjects in first-appearance order.
+    pub subjects: Vec<String>,
+    /// Any incoming commit has multiple parents.
+    pub contains_merge: bool,
+}
+
+/// Pin the tips before walking their union. A shared ancestor of several heads
+/// appears once, and anything already reachable from the destination is excluded.
+pub fn incoming_commits(base: &str, heads: &[&str]) -> Result<IncomingCommits> {
+    if heads.is_empty() {
+        bail!("a merge caption needs at least one incoming head");
+    }
     if git(&["rev-parse", "--is-shallow-repository"])?.trim() == "true" {
         bail!(
             "a merge caption needs complete commit history; run `git fetch --unshallow` then retry"
@@ -102,29 +119,48 @@ pub fn merge_subjects(base: &str, head: &str) -> Result<Vec<String>> {
             &format!("{revision}^{{commit}}"),
         ])
         .with_context(|| {
-            format!("cannot resolve commit `{revision}`; fetch the pull request's base and head")
+            format!("cannot resolve commit `{revision}`; fetch the merge's base and heads")
         })
+        .map(|id| id.trim_end().to_owned())
     };
-    // Pin both tips and pass only verified object IDs to the revision walker.
-    let base = resolve(base)?;
-    let head = resolve(head)?;
-    let range = format!("{}..{}", base.trim(), head.trim());
-    let log = git(&[
+    let excluded = format!("^{}", resolve(base)?);
+    let tips: Vec<_> = heads
+        .iter()
+        .map(|head| resolve(head))
+        .collect::<Result<_>>()?;
+    let mut args = vec![
         "log",
         "--topo-order",
         "--reverse",
-        "--no-merges",
         "--no-patch",
         "--no-color",
         "--no-notes",
         "--no-show-signature",
         "--encoding=UTF-8",
         "-z",
-        "--format=%s",
-        &range,
-        "--",
-    ])?;
-    Ok(log.split_terminator('\0').map(str::to_owned).collect())
+        "--format=%P%x00%s",
+        &excluded,
+    ];
+    args.extend(tips.iter().map(String::as_str));
+    args.push("--");
+    let log = git(&args)?;
+    let mut fields = log.split_terminator('\0');
+    let mut subjects = Vec::new();
+    let mut contains_merge = false;
+    while let Some(parents) = fields.next() {
+        let subject = fields
+            .next()
+            .context("missing subject in the incoming commit log")?;
+        if parents.split_ascii_whitespace().nth(1).is_some() {
+            contains_merge = true;
+        } else {
+            subjects.push(subject.to_owned());
+        }
+    }
+    Ok(IncomingCommits {
+        subjects,
+        contains_merge,
+    })
 }
 
 /// The commits of a range, oldest first.
@@ -170,8 +206,41 @@ fn commits(range: &str) -> Result<Vec<Commit>> {
     Ok(listed)
 }
 
-fn standing(config: &Config, commit: &Commit) -> Standing {
+// A branch caption may quote a landed PR title ending in (#N); inspect the
+// local arrival body first. A bare trailing issue reference alone proves no PR.
+pub(crate) fn is_pr_merge(subject: &str, body: &str, vocab: &Vocabulary) -> bool {
+    if caption::is_branch_caption(subject, body, vocab) {
+        return false;
+    }
+    if subject.starts_with("Merge pull request #") || subject.starts_with("Merge #") {
+        return subject::is_generated(subject);
+    }
+    let title = caption::without_inventory(subject, vocab);
+    let positive_suffix = title.rsplit_once(" (#").is_some_and(|(_, suffix)| {
+        suffix
+            .strip_suffix(')')
+            .and_then(|n| n.parse::<u64>().ok())
+            .is_some_and(|n| n > 0)
+    });
+    let mut routing = body.trim_start_matches(['\n', '\r']).lines();
+    let routed = routing
+        .next()
+        .is_some_and(|line| line.starts_with("Source: "))
+        && routing
+            .next()
+            .is_some_and(|line| line.starts_with("Base: "));
+    positive_suffix && (title != subject || routed)
+}
+
+fn standing(vocab: &Vocabulary, config: &Config, commit: &Commit) -> Standing {
     if commit.is_merge {
+        if caption::is_branch_message(&commit.message, vocab) {
+            return Standing::BranchMerge;
+        }
+        let body = commit.message.split_once('\n').map_or("", |(_, body)| body);
+        if is_pr_merge(commit.subject(), body, vocab) {
+            return Standing::PullRequestMerge;
+        }
         return Standing::Merge;
     }
     if subject::is_generated(commit.subject()) {
@@ -181,6 +250,41 @@ fn standing(config: &Config, commit: &Commit) -> Standing {
         Some(version) => Standing::On(version),
         None => Standing::Unsaid,
     }
+}
+
+/// Explain an integration only after inspecting the object itself. An authored
+/// commit with an identical subject must still be read as authored work.
+pub fn explain_commit(vocab: &Vocabulary, config: &Config, revision: &str) -> Result<ExitCode> {
+    let id = git(&[
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        &format!("{revision}^{{commit}}"),
+    ])?;
+    let list = commits(&format!("{}^!", id.trim()))?;
+    let commit = list.first().context("cannot read the requested commit")?;
+    let kind = standing(vocab, config, commit);
+    if commit.is_merge {
+        println!("{}: {}", commit.subject(), kind.name());
+        return Ok(ExitCode::SUCCESS);
+    }
+    let report = check_stored_message(
+        vocab,
+        &config.clone().for_a_subject_alone(),
+        commit.subject(),
+        None,
+    );
+    if let Some(reading) = report.reading.as_ref() {
+        println!("{reading}");
+    }
+    for line in report.errors.iter().chain(&report.warnings) {
+        println!("{line}");
+    }
+    Ok(if report.passed() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
 }
 
 fn plural(count: usize) -> String {
@@ -220,13 +324,15 @@ pub fn run(
     let listed = commits(range.unwrap_or("HEAD"))?;
     let standings: Vec<Standing> = listed
         .iter()
-        .map(|commit| standing(&config, commit))
+        .map(|commit| standing(vocab, &config, commit))
         .collect();
     let current = Standing::On(vocab.version.clone());
     // Integration commits and recognized Git messages have no authoring version.
     let wanted = |at: usize| {
-        !matches!(standings[at], Standing::Merge | Standing::Generated)
-            && (!unmigrated || standings[at] != current)
+        !matches!(
+            standings[at],
+            Standing::Merge | Standing::PullRequestMerge | Standing::Generated
+        ) && (!unmigrated || (standings[at] != current && standings[at] != Standing::BranchMerge))
     };
 
     let mut checked = 0;
@@ -236,7 +342,11 @@ pub fn run(
             continue;
         }
         checked += 1;
-        let report = check_stored_message(vocab, &config, &commit.message, Some(&commit.author));
+        let report = if standings[at] == Standing::BranchMerge {
+            check_branch_message(&config, &commit.message, true)
+        } else {
+            check_stored_message(vocab, &config, &commit.message, Some(&commit.author))
+        };
         if report.passed() {
             continue;
         }
@@ -310,7 +420,24 @@ mod tests {
             author: "Ada <ada@example.com>".to_string(),
             message: message.to_string(),
         };
-        standing(&config, &commit)
+        standing(&Vocabulary::builtin().unwrap(), &config, &commit)
+    }
+
+    #[test]
+    fn a_pr_reference_needs_a_landing_heading_or_provenance() {
+        let vocab = Vocabulary::builtin().unwrap();
+        assert!(!is_pr_merge("Undo the earlier choice (#42)", "", &vocab));
+        assert!(is_pr_merge(
+            "Preview (#42)",
+            "Source: project:side\nBase: project:trunk",
+            &vocab
+        ));
+        assert!(is_pr_merge("[`🧩✨`] Preview (#42)", "", &vocab));
+        assert!(!is_pr_merge(
+            "[`🧩✨`] side into trunk: Preview (#42)",
+            "Arrived from side (1):\n- abc Preview (#42)",
+            &vocab
+        ));
     }
 
     #[test]

@@ -643,6 +643,36 @@ fn check_with_source(
         );
         report_at(&mut report, config.length, text);
     }
+    check_signature(&mut report, config, signed, source, is_marker);
+    report
+}
+
+/// A generated branch integration has its own subject and body; apply the same
+/// signature policy used for authored commits once Git establishes its provenance.
+pub fn check_branch_message(config: &Config, message: &str, stored: bool) -> Report {
+    let lines: Vec<_> = message.lines().collect();
+    let split = parts(config, &lines);
+    let body: Vec<_> = split.body.iter().map(|&i| lines[i]).collect();
+    let mut report = Report {
+        reading: Some("a branch merge caption".into()),
+        ..Report::default()
+    };
+    let source = if stored {
+        MessageSource::Stored
+    } else {
+        MessageSource::Draft
+    };
+    check_signature(&mut report, config, closing(&body).signed, source, false);
+    report
+}
+
+fn check_signature(
+    report: &mut Report,
+    config: &Config,
+    signed: bool,
+    source: MessageSource,
+    is_marker: bool,
+) {
     let signature_level = match config.signature {
         SignatureRule::Agents
             if source == MessageSource::Draft && !is_marker && in_agent_session() =>
@@ -655,12 +685,11 @@ fn check_with_source(
     };
     if signature_level != Level::Off && !signed {
         report_at(
-            &mut report,
+            report,
             signature_level,
             "an agent signs the end of the body: an underscore on its own line, the model with its effort, the harness with its session, and where they apply lines for Sub-agents, Team and Research. Take every value from the harness's record with the script for your harness in the skill's scripts folder. Run `gitmoji guide message`".to_string(),
         );
     }
-    report
 }
 
 #[cfg(test)]

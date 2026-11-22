@@ -4,7 +4,8 @@ use crate::subject::read_tags;
 use crate::vocabulary::{Slot, Token, Vocabulary};
 
 const AREA_LIMIT: usize = 3;
-const CAPTION_LIMIT: usize = 9;
+const PR_LIMIT: usize = 9;
+const MERGE_LIMIT: usize = 14;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Heading<'v> {
@@ -94,8 +95,16 @@ fn after_inventory<'a>(title: &'a str, vocab: &Vocabulary) -> Option<&'a str> {
     let activity = |slot| slot != Slot::Area;
     if let Some((left, right)) = groups.split_once(" / ") {
         let areas = group_slots(left, AREA_LIMIT, vocab, |slot| slot == Slot::Area)?;
-        group_slots(right, CAPTION_LIMIT - areas, vocab, activity)?;
-    } else if group_slots(groups, CAPTION_LIMIT, vocab, activity).is_none() {
+        if ![PR_LIMIT, MERGE_LIMIT]
+            .iter()
+            .any(|limit| group_slots(right, limit - areas, vocab, activity).is_some())
+        {
+            return None;
+        }
+    } else if ![PR_LIMIT, MERGE_LIMIT]
+        .iter()
+        .any(|&limit| group_slots(groups, limit, vocab, activity).is_some())
+    {
         let cluster = groups.strip_prefix('`')?.strip_suffix('`')?;
         let tags = read_tags(vocab, true, cluster).ok()?;
         let canonical = [
@@ -108,6 +117,39 @@ fn after_inventory<'a>(title: &'a str, vocab: &Vocabulary) -> Option<&'a str> {
         }
     }
     Some(human)
+}
+
+/// Remove one canonical caption inventory, preserving the title and PR references.
+pub fn without_inventory<'a>(title: &'a str, vocab: &Vocabulary) -> &'a str {
+    after_inventory(title, vocab).unwrap_or(title)
+}
+
+/// Identify the local merge message produced from Git's recorded sources. Only use
+/// this after verifying the merge state or the stored commit's parent count.
+pub fn is_branch_message(message: &str, vocab: &Vocabulary) -> bool {
+    message
+        .split_once('\n')
+        .is_some_and(|(subject, body)| is_branch_caption(subject, body, vocab))
+}
+
+/// Recognize a branch caption from a stored subject and its separately read body.
+pub fn is_branch_caption(subject: &str, body: &str, vocab: &Vocabulary) -> bool {
+    let Some((route, summary)) = without_inventory(subject, vocab).split_once(": ") else {
+        return false;
+    };
+    let Some((sources, target)) = route.split_once(" into ") else {
+        return false;
+    };
+    if sources.is_empty() || target.is_empty() || summary.is_empty() {
+        return false;
+    }
+    body.lines()
+        .find(|line| !line.is_empty())
+        .and_then(|line| line.strip_prefix("Arrived from "))
+        .and_then(|line| line.strip_prefix(sources))
+        .and_then(|rest| rest.strip_prefix(" ("))
+        .and_then(|rest| rest.strip_suffix("):"))
+        .is_some_and(|n| n.parse::<usize>().is_ok())
 }
 
 fn human_title<'a>(mut title: &'a str, number: u64, vocab: &Vocabulary) -> &'a str {
@@ -132,6 +174,9 @@ fn human_title<'a>(mut title: &'a str, number: u64, vocab: &Vocabulary) -> &'a s
 pub struct Caption {
     /// The PR title shown before landing.
     pub title: String,
+    /// The former nine-slot title when it differs, for verifying historical PR landings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_title: Option<String>,
     /// The landed commit subject, including the GitHub PR suffix.
     pub subject: String,
     /// Incoming non-merge commits with a recognized heading.
@@ -158,6 +203,18 @@ pub fn summarize(
     subjects: &[String],
     vocab: &Vocabulary,
 ) -> Result<Caption, String> {
+    summarize_pr(number, title, subjects, false, vocab)
+}
+
+/// Format a PR title from a complete incoming revision range. A PR introducing
+/// an integration commit uses the larger inventory reserved for branch merges.
+pub fn summarize_pr(
+    number: u64,
+    title: &str,
+    subjects: &[String],
+    contains_merge: bool,
+    vocab: &Vocabulary,
+) -> Result<Caption, String> {
     if number == 0 {
         return Err("use a positive pull request number".to_string());
     }
@@ -170,50 +227,82 @@ pub fn summarize(
     }
 
     let human = human_title(title, number, vocab);
-    let (groups, recognized) = inventory(subjects, vocab);
-    let title = match groups {
-        Some(groups) => format!("[{groups}] {human}"),
-        None => human.to_string(),
+    let limit = if contains_merge {
+        MERGE_LIMIT
+    } else {
+        PR_LIMIT
     };
+    let inventory = Inventory::from_subjects(subjects, vocab);
+    let render_title = |limit| match inventory.render(limit) {
+        Some(groups) => format!("[{groups}] {human}"),
+        None => human.to_owned(),
+    };
+    let title = render_title(limit);
+    let previous_title = contains_merge
+        .then(|| render_title(PR_LIMIT))
+        .filter(|old| old != &title);
     Ok(Caption {
+        previous_title,
         subject: format!("{title} (#{number})"),
         title,
-        recognized,
+        recognized: inventory.recognized,
         total: subjects.len(),
     })
 }
 
-fn inventory(subjects: &[String], vocab: &Vocabulary) -> (Option<String>, usize) {
-    let mut headings = subjects.iter().filter_map(|s| heading(s, vocab));
-    let Some(first) = headings.next() else {
-        return (None, 0);
-    };
-    let mut areas = Vec::new();
-    let mut activities = Vec::new();
-    let mut one_heading = true;
-    let mut recognized = 0;
-    for item in std::iter::once(first).chain(headings) {
-        recognized += 1;
-        one_heading &= item == first;
-        if let Some(area) = item.area {
-            push_distinct(&mut areas, area);
+/// Render the leading, bracketed inventory for a local branch merge, if any
+/// incoming authored commit carries recognized symbols.
+pub fn merge_inventory(subjects: &[String], vocab: &Vocabulary) -> Option<String> {
+    Inventory::from_subjects(subjects, vocab)
+        .render(MERGE_LIMIT)
+        .map(|groups| format!("[{groups}]"))
+}
+
+struct Inventory<'v> {
+    areas: Vec<&'v str>,
+    activities: Vec<&'v str>,
+    one_heading: bool,
+    recognized: usize,
+}
+
+impl<'v> Inventory<'v> {
+    fn from_subjects(subjects: &[String], vocab: &'v Vocabulary) -> Self {
+        let mut inventory = Self {
+            areas: Vec::new(),
+            activities: Vec::new(),
+            one_heading: true,
+            recognized: 0,
+        };
+        let mut first = None;
+        for item in subjects.iter().filter_map(|s| heading(s, vocab)) {
+            inventory.recognized += 1;
+            inventory.one_heading &= item == *first.get_or_insert(item);
+            if let Some(area) = item.area {
+                push_distinct(&mut inventory.areas, area);
+            }
+            push_distinct(&mut inventory.activities, item.activity);
+            if let Some(modifier) = item.modifier {
+                push_distinct(&mut inventory.activities, modifier);
+            }
         }
-        push_distinct(&mut activities, item.activity);
-        if let Some(modifier) = item.modifier {
-            push_distinct(&mut activities, modifier);
-        }
+        inventory
     }
-    let groups = if one_heading {
-        format!("`{}{}`", areas.concat(), activities.concat())
-    } else if areas.is_empty() {
-        render_group(&activities, CAPTION_LIMIT)
-    } else {
-        let area_slots = areas.len().min(AREA_LIMIT);
-        let left = render_group(&areas, AREA_LIMIT);
-        let right = render_group(&activities, CAPTION_LIMIT - area_slots);
-        format!("{left} / {right}")
-    };
-    (Some(groups), recognized)
+
+    fn render(&self, limit: usize) -> Option<String> {
+        if self.recognized == 0 {
+            return None;
+        }
+        Some(if self.one_heading {
+            format!("`{}{}`", self.areas.concat(), self.activities.concat())
+        } else if self.areas.is_empty() {
+            render_group(&self.activities, limit)
+        } else {
+            let area_slots = self.areas.len().min(AREA_LIMIT);
+            let left = render_group(&self.areas, AREA_LIMIT);
+            let right = render_group(&self.activities, limit - area_slots);
+            format!("{left} / {right}")
+        })
+    }
 }
 
 #[cfg(test)]
