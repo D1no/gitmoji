@@ -127,6 +127,15 @@ pub(crate) fn dependabot_message<'a>(
     dependabot_upgrade(vocab, author, message).unwrap_or(Cow::Borrowed(message))
 }
 
+/// Display a recognized authored heading in the vocabulary's spelling and retain its prose.
+pub(crate) fn display_subject(vocab: &Vocabulary, author: &str, subject: &str) -> String {
+    let subject = dependabot_message(vocab, author, subject);
+    match caption::heading(&subject, vocab) {
+        Some(heading) => heading.display(&subject),
+        None => subject.into_owned(),
+    }
+}
+
 /// Authored commits that become reachable, in topological order, oldest first.
 pub struct IncomingCommits {
     /// Authored subjects in first-appearance order.
@@ -262,9 +271,13 @@ fn commits(range: &str, vocab: &Vocabulary) -> Result<Vec<Commit>> {
     // Copy the full message, including blank lines, without interpreting its contents.
     let log = git(&[
         "log",
+        "--date-order",
         "--reverse",
         "-z",
         "--no-show-signature",
+        "--no-notes",
+        "--no-patch",
+        "--encoding=UTF-8",
         "--format=%H%x00%P%x00%an <%ae>%x00%B",
         "--end-of-options",
         range,
@@ -411,6 +424,37 @@ fn plural(count: usize) -> String {
     }
 }
 
+/// An unborn repository has an empty default log, but an explicit range must still resolve.
+fn has_head() -> Result<bool> {
+    git(&["rev-parse", "--git-dir"]).context("this command reads a git repository")?;
+    Ok(Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet", "HEAD"])
+        .output()
+        .context("cannot read HEAD")?
+        .status
+        .success())
+}
+
+/// Show authored decisions whose heading contains the requested vocabulary symbol.
+pub fn log(vocab: &Vocabulary, emoji: &str, range: Option<&str>) -> Result<ExitCode> {
+    let (_, entry) = vocab
+        .find(emoji)
+        .or_else(|| vocab.find_by_code(emoji))
+        .with_context(|| format!("expected one vocabulary emoji or shortcode, got `{emoji}`"))?;
+    if range.is_none() && !has_head()? {
+        return Ok(ExitCode::SUCCESS);
+    }
+    let listed = commits(range.unwrap_or("HEAD"), vocab)?;
+    for commit in listed.iter().rev().filter(|commit| !commit.is_merge) {
+        if let Some(heading) = caption::heading(commit.subject(), vocab)
+            && heading.symbols().any(|symbol| symbol == entry.emoji)
+        {
+            println!("{} {}", commit.short(), heading.display(commit.subject()));
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 /// Checks finished commits against today's rules and lists the ones that do not pass.
 ///
 /// The commits of `range`, or every commit. With `unmigrated`, only those among them
@@ -428,12 +472,7 @@ pub fn run(
     // A permissive hook can admit older subjects; history is where authors find them.
     config.untagged = Level::Error;
 
-    git(&["rev-parse", "--git-dir"]).context("gitmoji history reads a git repository")?;
-    let has_commits = Command::new("git")
-        .args(["rev-parse", "--verify", "--quiet", "HEAD"])
-        .output()
-        .is_ok_and(|output| output.status.success());
-    if range.is_none() && !has_commits {
+    if range.is_none() && !has_head()? {
         println!("There are no commits yet.");
         return Ok(ExitCode::SUCCESS);
     }
@@ -467,7 +506,11 @@ pub fn run(
             continue;
         }
         failing += 1;
-        println!("{} {}", commit.short(), commit.subject());
+        println!(
+            "{} {}",
+            commit.short(),
+            display_subject(vocab, &commit.author, commit.subject())
+        );
         for error in &report.errors {
             println!("    {error}");
         }

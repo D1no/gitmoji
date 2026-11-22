@@ -91,6 +91,13 @@ enum Action {
     },
     /// Look at the staged files and say when they look like more than one commit.
     Staged,
+    /// Show authored commits whose heading contains a vocabulary emoji, newest first.
+    Log {
+        /// One area, activity, modifier or marker, as an emoji or GitHub shortcode.
+        emoji: String,
+        /// A Git revision or range such as `main..HEAD`. Defaults to HEAD.
+        range: Option<String>,
+    },
     /// Check commits that are already made, and list the ones that would not pass.
     History {
         /// The commits to check, as git names a range: `main..HEAD`. Without it, every
@@ -344,6 +351,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
     let vocab = Vocabulary::builtin()?;
+    if let Action::Log { emoji, range } = &cli.command {
+        return history::log(&vocab, emoji, range.as_deref());
+    }
     if let Action::History {
         upgrade: true,
         ref options,
@@ -554,6 +564,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
         }
         Action::Staged => {
+            for (_, hint) in &mut config.hints {
+                if let Some((_, entry)) = vocab.find(hint) {
+                    hint.clone_from(&entry.emoji);
+                }
+            }
             let staged = Staged::analyse(&staged_files()?, &config);
             for line in staged.lines() {
                 eprintln!("gitmoji: {line}");
@@ -564,6 +579,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Action::Doctor { .. }
+        | Action::Log { .. }
         | Action::Pin
         | Action::Signature { .. }
         | Action::PrTitle(_)

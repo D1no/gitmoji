@@ -63,6 +63,12 @@ A PR appears under the first group that matches an authored area. The line shows
 
 The range selects merge commits. Gitmoji recognizes its PR captions and GitHub's default merge subjects. Local branch merges can carry PRs into a release. Each PR appears once, and a PR integrated inside another keeps its own tickets and breaking flags. When direct, squash or rebased work appears on the first-parent release history, stderr gives the count and lists each omitted commit’s abbreviated Git ID and subject, oldest first. Standalone release and adoption markers are excluded from the count. Review that history and add any changes readers need. When the draft is empty, stderr explains why and stdout stays empty. Release-marker commits (`🔖`) contribute no entry, and a PR containing only those markers is omitted. Review the draft before publishing to combine related work and describe the change for your readers.
 
+## Find commits by emoji
+
+Run `gitmoji log '⬆' trunk..HEAD` to see dependency upgrades on a branch, newest first. Omit the range to search everything reachable from HEAD. The filter accepts a single vocabulary emoji or its GitHub shortcode. It matches any slot in the authored heading, including an optional modifier or a standalone marker. For example, `gitmoji log '💥'` finds breaking changes across areas. Merge inventories and emoji mentioned only in prose do not add matches.
+
+The log displays the vocabulary’s canonical glyphs. Searching for `⬆`, `⬆️` or `:arrow_up:` gives the same results, including recorded Dependabot job headings. Use `git show -s --format=%s <sha>` to inspect the original spelling in Git.
+
 ## Reviewing untagged commits during adoption
 
 The hook normally rejects a missing intention. To allow ordinary prose while a team

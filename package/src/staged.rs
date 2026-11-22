@@ -1,6 +1,6 @@
 //! Looks at the staged files before a commit and says when they look like more than one commit.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::Config;
 
@@ -40,7 +40,13 @@ impl Staged {
                 Some(scope) => staged.scopes.entry(scope).or_default().push(file.clone()),
                 None => staged.unscoped.push(file.clone()),
             }
-            for (_, area) in config.hints.iter().filter(|(p, _)| matches(p, file)) {
+            let areas: BTreeSet<_> = config
+                .hints
+                .iter()
+                .filter(|(pattern, _)| matches(pattern, file))
+                .map(|(_, area)| area)
+                .collect();
+            for area in areas {
                 *staged.areas.entry(area.clone()).or_default() += 1;
             }
         }
