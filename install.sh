@@ -19,35 +19,62 @@ if [ "${1:-}" = --pinned ]; then
     echo "Usage: install.sh --pinned (run from the project checkout)" >&2
     exit 2
   fi
-  top=$(git rev-parse --show-toplevel)
-  # Match the CLI's settings precedence. Parse TOML before interpolating a tag.
-  version=$(python3 -I - "$top" <<'PYTHON'
-from pathlib import Path
-import re
-import sys
-try:
-    import tomllib
-except ImportError:
-    sys.exit("install.sh --pinned requires Python 3.11 or later")
-root = Path(sys.argv[1])
-settings = next((root / name for name in
-                 ("gitmoji.toml", ".config/gitmoji.toml", "triangle.toml")
-                 if (root / name).is_file()), None)
-if settings is None:
-    sys.exit("No Gitmoji settings found in the project")
-try:
-    with settings.open("rb") as source:
-        version = tomllib.load(source)["vocabulary"]["version"]
-except (OSError, ValueError, KeyError, TypeError) as error:
-    sys.exit(f"Cannot read [vocabulary].version from {settings}: {error}")
-if not isinstance(version, str) or not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}", version):
-    sys.exit(f"Expected a release number such as 1.2.3 in {settings}")
-print(version)
-PYTHON
-)
-  pinned=$(mktemp -d "${TMPDIR:-/tmp}/gitmoji-pinned.XXXXXX")
-  trap 'rm -rf "$pinned"' EXIT
+  # A single folder for everything this run fetches, removed however the run ends.
+  work=$(mktemp -d "${TMPDIR:-/tmp}/gitmoji-pinned.XXXXXX")
+  trap 'rm -rf "$work"' EXIT
   trap 'exit 1' INT TERM
+
+  # The release a project has adopted is `[vocabulary].version` in its settings, and only
+  # the command reads those: `gitmoji pin` prints the adopted release or says why it
+  # cannot. Use a gitmoji that is already installed when it is ours and knows `pin`.
+  reader=
+  found=$(command -v gitmoji 2>/dev/null || true)
+  if [ -n "$found" ] && [ -f "$found" ]; then
+    case "$("$found" --version 2>/dev/null </dev/null || true)" in
+      *gitmoji-triangle*)
+        if "$found" pin --help >/dev/null 2>&1 </dev/null; then
+          reader=$found
+        fi
+        ;;
+    esac
+  fi
+  if [ -z "$reader" ]; then
+    # None at hand, as on a fresh CI machine. Get this checkout's own command the way
+    # the installer always does, checksum included, into this run's folder: nothing on
+    # the machine changes, and the folder is gone when the run ends. Another tool called
+    # gitmoji may stay where it is, so the question about replacing it is answered here.
+    if ! GITMOJI_BIN="$work/bin" GITMOJI_OVERWRITE=1 "$here/install.sh" >"$work/reader.log" 2>&1; then
+      cat "$work/reader.log" >&2
+      echo "Could not get a gitmoji to read the project's adopted release with." >&2
+      exit 1
+    fi
+    for name in gitmoji gitmoji.exe; do
+      if [ -f "$work/bin/$name" ]; then
+        reader="$work/bin/$name"
+      fi
+    done
+    if [ -z "$reader" ] || ! "$reader" pin --help >/dev/null 2>&1 </dev/null; then
+      cat "$work/reader.log" >&2
+      echo "The gitmoji of this checkout cannot name a project's adopted release." >&2
+      exit 1
+    fi
+  fi
+  # Run where the caller stands, in the project. What `pin` says on failure is the message.
+  version=$("$reader" pin </dev/null) || exit
+  # The answer becomes part of a tag name. Take digits and dots in three parts, nothing else.
+  case "$version" in
+    '' | *[!0-9.]* | .* | *. | *..* | *.*.*.*)
+      echo "gitmoji pin answered with something other than a release number: $version" >&2
+      exit 1
+      ;;
+    *.*.*) ;;
+    *)
+      echo "gitmoji pin answered with something other than a release number: $version" >&2
+      exit 1
+      ;;
+  esac
+  pinned="$work/release"
+  mkdir "$pinned"
   git -C "$pinned" init -q
   git -C "$pinned" fetch -q --depth=1 --no-tags https://github.com/D1no/gitmoji.git "refs/tags/v$version"
   git -C "$pinned" -c advice.detachedHead=false checkout -q --detach 'FETCH_HEAD^{commit}'
