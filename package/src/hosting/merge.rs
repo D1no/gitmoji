@@ -2,7 +2,7 @@
 use std::fmt::Write;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use clap::Args;
 use gitmoji_triangle::vocabulary::Vocabulary;
 use serde_json::{Value, json};
@@ -148,6 +148,99 @@ fn commit_oid(value: &Value) -> Result<&str> {
         .context("GitHub returned an invalid PR commit ID")
 }
 
+/// Match GitHub's short, public explanations. An enterprise proxy or ruleset
+/// can return arbitrary text, including secrets or terminal escapes.
+fn known_merge_reason(value: &Value) -> Option<&'static str> {
+    let message = value.get("message")?.as_str()?.trim_end_matches('.');
+    [
+        "Pull Request is not mergeable",
+        "Head branch was modified",
+        "Head branch was modified. Review and try the merge again",
+        "Base branch was modified. Review and try the merge again",
+        "Merge commits are not allowed on this repository",
+        "At least one approving review is required",
+        "Two approving reviews are required",
+        "Blocked by branch protection",
+        "Validation failed",
+        "Resource not accessible by integration",
+        "Bad credentials",
+        "Not found",
+    ]
+    .into_iter()
+    .find(|known| known.eq_ignore_ascii_case(message))
+}
+
+fn submit(client: &Client, pr: u64, payload: &Value, url: &str) -> Result<()> {
+    let uncertain = || format!("check {url} for the merge outcome before retrying");
+    let mut response = client
+        .send(
+            "PUT",
+            &format!("{}/pulls/{pr}/merge", client.rest),
+            Some(payload),
+        )
+        .with_context(uncertain)?;
+    let status = response.status();
+    if status.is_client_error() {
+        let advice = match status.as_u16() {
+            405 => {
+                "Check merge conflicts, required reviews and checks, and whether merge commits are allowed."
+            }
+            409 => "Fetch the current PR head and review a fresh preview before submitting.",
+            422 => "Inspect the proposed merge and the repository's merge rules.",
+            401 | 403 => "Check the credential's access to merge this pull request.",
+            _ => "Inspect the pull request and its merge requirements.",
+        };
+        let reason = response
+            .body_mut()
+            .with_config()
+            .limit(8192)
+            .read_json::<Value>()
+            .ok()
+            .as_ref()
+            .and_then(known_merge_reason);
+        if let Some(reason) = reason {
+            bail!(
+                "GitHub rejected the merge (HTTP {}): {reason}. {advice} {url}",
+                status.as_u16()
+            );
+        }
+        bail!(
+            "GitHub rejected the merge (HTTP {}). {advice} {url}",
+            status.as_u16()
+        );
+    }
+    ensure!(
+        status.is_success(),
+        "GitHub returned HTTP {}. {}",
+        status.as_u16(),
+        uncertain()
+    );
+    let outcome: Value = response
+        .body_mut()
+        .with_config()
+        .limit(65536)
+        .read_json()
+        .context("invalid GitHub merge response")
+        .with_context(uncertain)?;
+    match outcome["merged"].as_bool() {
+        Some(true) => {
+            if let Ok(sha) = commit_oid(&outcome["sha"]) {
+                println!("Merged {url} at {sha}");
+            } else {
+                println!("Merged {url}");
+            }
+            Ok(())
+        }
+        Some(false) => {
+            if let Some(reason) = known_merge_reason(&outcome) {
+                bail!("GitHub did not merge the pull request: {reason}. Check {url}");
+            }
+            bail!("GitHub did not merge the pull request. Check {url}");
+        }
+        None => bail!("GitHub did not confirm the merge outcome. {}", uncertain()),
+    }
+}
+
 /// Print a merge preview or submit an identical previously reviewed proposal.
 pub(crate) fn merge(args: MergeArgs) -> Result<()> {
     valid_pr(args.pr)?;
@@ -228,25 +321,8 @@ pub(crate) fn merge(args: MergeArgs) -> Result<()> {
         "the PR changed while preparing the caption; inspect a fresh preview"
     );
     let url = format!("{}/{}/pull/{}", client.server, args.repo, args.pr);
-    // The host checks the head atomically. A network error after PUT may have
-    // occurred after acceptance, so the caller must inspect the PR before retrying.
-    let outcome = client
-        .request(
-            "PUT",
-            &format!("{}/pulls/{}/merge", client.rest, args.pr),
-            Some(&payload),
-        )
-        .with_context(|| format!("check {url} for the merge outcome before retrying"))?;
-    ensure!(
-        outcome["merged"] == true,
-        "GitHub did not merge the pull request; check {url}"
-    );
-    if let Some(sha) = outcome["sha"].as_str() {
-        println!("Merged {url} at {sha}");
-    } else {
-        println!("Merged {url}");
-    }
-    Ok(())
+    // The host checks the head atomically. Submit exactly once.
+    submit(&client, args.pr, &payload, &url)
 }
 
 #[cfg(test)]

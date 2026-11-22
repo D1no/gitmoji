@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -74,10 +75,13 @@ class GitHubMergeTests(unittest.TestCase):
                 payload = json.loads(self.rfile.read(length))
                 assert self.path == "/api/v3/repos/team/project/pulls/42/merge", self.path
                 cls.state["requests"].append(("PUT", payload))
-                self._json(200, cls.state["merged"])
+                if cls.state["merge_status"] == "disconnect":
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                    return
+                self._json(cls.state["merge_status"], cls.state["merged"])
 
             def _json(self, code, data):
-                body = json.dumps(data).encode()
+                body = data if isinstance(data, bytes) else json.dumps(data).encode()
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -112,6 +116,7 @@ class GitHubMergeTests(unittest.TestCase):
         self.state["pr"] = self.pr
         self.state["on_recheck"] = {}
         self.state["requests"] = []
+        self.state["merge_status"] = 200
         self.state["merged"] = {"merged": True, "sha": "c" * 40}
         self.state["expected_owner"] = "team"
         self.state["expected_name"] = "project"
@@ -298,6 +303,60 @@ class GitHubMergeTests(unittest.TestCase):
         res = self.run_cli(apply)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(res.stdout.strip(), f"Merged https://localhost:{self.tls.port}/team/project/pull/42")
+
+    def test_merge_rejections_report_action_and_never_repeat_the_put(self):
+        for status, reason, hint in [
+            (405, "Two approving reviews are required.", "required reviews and checks"),
+            (409, "Head branch was modified.", "review a fresh preview"),
+            (422, "Validation Failed", "repository's merge rules"),
+        ]:
+            with self.subTest(status=status):
+                _, _, apply = self.reviewed()
+                self.state.update(merge_status=status, merged={"message": reason})
+                result = self.run_cli(apply)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"HTTP {status}", result.stderr)
+                self.assertIn(reason.lower().rstrip("."), result.stderr.lower())
+                self.assertIn(hint, result.stderr)
+                self.assertNotIn("title length", result.stderr)
+                self.assertNotIn("outcome before retrying", result.stderr)
+                self.assertEqual([m for m, _ in self.state["requests"]], ["POST", "POST", "PUT"])
+
+    def test_merge_rejection_does_not_print_arbitrary_host_text(self):
+        for body in [
+            b"<html>test-token</html>",
+            {"message": "Two approving reviews are required.\n\x1b[2Jtest-token"},
+            {"message": "Credentials test-token"},
+            {"message": "X" * 8500},
+        ]:
+            with self.subTest(kind=type(body).__name__):
+                _, _, apply = self.reviewed()
+                self.state.update(merge_status=405, merged=body)
+                result = self.run_cli(apply)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("HTTP 405", result.stderr)
+                self.assertNotIn("test-token", result.stderr)
+                self.assertNotIn("\x1b", result.stderr)
+                self.assertNotIn("XXXX", result.stderr)
+                self.assertNotIn("<html>", result.stderr)
+                self.assertEqual([m for m, _ in self.state["requests"]].count("PUT"), 1)
+
+    def test_ambiguous_merge_results_require_checking_the_pr_without_retrying(self):
+        for status, body in [
+            (503, {"message": "test-token"}),
+            ("disconnect", None),
+            (200, b"invalid JSON containing test-token"),
+            (200, {"message": "test-token"}),
+        ]:
+            with self.subTest(status=status, response_type=type(body).__name__):
+                _, _, apply = self.reviewed()
+                self.state.update(merge_status=status, merged=body)
+                result = self.run_cli(apply)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("for the merge outcome before retrying", result.stderr)
+                self.assertIn("/team/project/pull/42", result.stderr)
+                self.assertNotIn("test-token", result.stderr)
+                self.assertEqual([m for m, _ in self.state["requests"]], ["POST", "POST", "PUT"])
 
     def test_missing_commits_report_the_fetch_refs(self):
         self.pr["headRefOid"] = "d" * 40
