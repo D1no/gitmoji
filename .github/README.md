@@ -46,12 +46,13 @@ before pointing downstream projects at the release.
    wait for CI on `trunk`.
 3. Tag the tested commit with `git tag -a v<version> <tested-sha> -m "gitmoji <version>"`
    and push it with `git push origin refs/tags/v<version>`.
-4. Wait for the Release workflow. Verify all five platform downloads against
-   `SHA256SUMS`. From a fresh checkout of the tag, run the installer and
-   confirm the downloaded binary and its vocabulary report the same release number. Give downstream projects the published release link.
+4. Wait for the Release workflow. Verify the five platform binaries and standalone
+   `install.sh` against `SHA256SUMS`. From a fresh project with the release pinned,
+   run the downloaded installer with `--pinned`. Confirm the installed binary and
+   its vocabulary report the same release number. Give downstream projects the published release link.
 
 The workflow builds the command for five platforms, runs the tests on each one it can
-run, and publishes a release with one file per platform and `SHA256SUMS`. The title and
+run, and publishes the five binaries, a standalone `install.sh` and `SHA256SUMS`. The title and
 notes are the changelog's entry. It stops when the tag does not match the crate version
 or the changelog has no entry. `install.sh` downloads the file for the machine from that
 release and checks it against the sums.
