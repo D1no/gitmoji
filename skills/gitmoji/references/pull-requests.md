@@ -32,6 +32,8 @@ The workflow uses the current base, head and human title when the PR opens, reop
 
 The managed workflow runs `gitmoji pr-title --pr NUMBER`, which updates the title on GitHub. Actions supplies `GITHUB_SERVER_URL`, `GITHUB_API_URL` and `GITHUB_REPOSITORY`. The workflow passes its job token as `GITMOJI_TITLE_TOKEN`, with `contents: read` and `pull-requests: write`. To preview an open PR from a full local clone, run `gitmoji github-merge --repo OWNER/REPO --pr NUMBER` and add `--hostname HOST` for an enterprise host. This invocation is read-only.
 
+For automated dependency updates, configure a [Dependabot commit prefix](dependabot.md) so both the commit check and the PR title recognize the upgrade.
+
 ## Read or preview a caption
 
 ```text

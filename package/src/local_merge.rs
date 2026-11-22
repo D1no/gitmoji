@@ -250,7 +250,7 @@ fn render(
     vocab: &Vocabulary,
     git: fn(&[&str]) -> Result<String>,
 ) -> Result<String> {
-    let incoming = incoming_commits_with(base, heads, git)?;
+    let incoming = incoming_commits_with(base, heads, vocab, git)?;
     let excluded = format!("^{base}");
     let mut args = vec![
         "log",

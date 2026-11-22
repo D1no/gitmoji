@@ -384,6 +384,110 @@ fn history_recognizes_a_merge_by_its_parents_even_in_a_shallow_clone() {
 }
 
 #[test]
+fn stored_dependabot_upgrades_pass_checks_and_get_one_caption() {
+    let repo = tempfile::tempdir().unwrap();
+    let here = repo.path();
+    git(here, &["init", "-q"]);
+    git(here, &["commit", "--allow-empty", "-m", "base"]);
+    let bot = "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>";
+    for (stored, title, expected) in [
+        (
+            "🧩:arrow_up: — (deps): Bump ms from 2.1.0 to 2.1.3",
+            "🧩⬆️ — (deps): Bump ms from 2.1.0 to 2.1.3",
+            "[`🧩⬆️`] Bump ms from 2.1.0 to 2.1.3",
+        ),
+        (
+            "🧩:arrow_up: — (deps): Bump ms",
+            "🧩⬆️ — (deps): Bump ms from 2.1.0 to 2.1.3 in /applications/customer-services/reporting",
+            "[`🧩⬆️`] Bump ms from 2.1.0 to 2.1.3 in /applications/customer-services/reporting",
+        ),
+        (
+            ":construction_worker::arrow_up: — (ci): Bump the actions group with 2 updates",
+            "👷⬆️ — (ci): Bump the actions group with 2 updates",
+            "[`👷⬆️`] Bump the actions group with 2 updates",
+        ),
+    ] {
+        git(
+            here,
+            &["commit", "--allow-empty", "--author", bot, "-m", stored],
+        );
+        let check = gitmoji(here, &["history", "HEAD^..HEAD"]);
+        assert!(check.status.success(), "{}", text(&check));
+        for input in [title, expected] {
+            let rendered = gitmoji(
+                here,
+                &[
+                    "merge-caption",
+                    "--pr",
+                    "1",
+                    "--title",
+                    input,
+                    "HEAD^",
+                    "HEAD",
+                ],
+            );
+            assert_eq!(text(&rendered).trim(), expected);
+        }
+    }
+    let raw = ":construction_worker::arrow_up: — (ci): Bump the actions group with 2 updates";
+    let edited = gitmoji(
+        here,
+        &[
+            "merge-caption",
+            "--pr",
+            "1",
+            "--title",
+            "Adopt the runner update",
+            "HEAD^",
+            "HEAD",
+        ],
+    );
+    assert_eq!(text(&edited).trim(), "[`👷⬆️`] Adopt the runner update");
+    let custom = "👷⬆️ — (billing): Review the invoice worker";
+    let rendered = gitmoji(
+        here,
+        &[
+            "merge-caption",
+            "--pr",
+            "1",
+            "--title",
+            custom,
+            "HEAD^",
+            "HEAD",
+        ],
+    );
+    assert_eq!(text(&rendered).trim(), format!("[`👷⬆️`] {custom}"));
+    assert!(!gitmoji(here, &["check", "-m", raw]).status.success());
+    git(here, &["commit", "--allow-empty", "-m", raw]);
+    assert!(!gitmoji(here, &["history", "HEAD^..HEAD"]).status.success());
+    git(
+        here,
+        &[
+            "commit",
+            "--allow-empty",
+            "--author",
+            "dependabot[bot] <contributor@example.invalid>",
+            "-m",
+            raw,
+        ],
+    );
+    assert!(!gitmoji(here, &["history", "HEAD^..HEAD"]).status.success());
+    let unrelated = gitmoji(
+        here,
+        &[
+            "merge-caption",
+            "--pr",
+            "1",
+            "--title",
+            "A reviewer title",
+            "HEAD^",
+            "HEAD",
+        ],
+    );
+    assert_eq!(text(&unrelated).trim(), "A reviewer title");
+}
+
+#[test]
 fn merge_caption_reads_the_changes_arriving_on_the_actual_target() {
     let repo = scratch("caption-arriving");
     git(&repo, &["init", "-q", "-b", "main"]);

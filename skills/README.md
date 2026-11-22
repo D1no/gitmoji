@@ -9,6 +9,7 @@ only when the skill points to it.
 | `gitmoji/SKILL.md` | When to ask the command for which piece, how to plan, write and sign |
 | `gitmoji/references/vocabulary.txt` | The whole guide, for when the command is not installed. Generated |
 | `gitmoji/references/pull-requests.md`, `upgrade-history.md` | Setup, landing and retrospective history upgrades |
+| [Dependabot](gitmoji/references/dependabot.md) | Commit prefixes for single and grouped version updates |
 
 ## Rules for this folder
 

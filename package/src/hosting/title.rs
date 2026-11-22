@@ -5,7 +5,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail, ensure};
 use base64::Engine;
 use clap::Args;
-use gitmoji_triangle::{caption, vocabulary::Vocabulary};
+use gitmoji_triangle::vocabulary::Vocabulary;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::{Client, valid_pr};
@@ -180,15 +180,9 @@ fn proposal(remote: &str, token: &str, number: u64, pr: &Pull) -> Result<String>
         fetched.lines().eq([pr.base.as_str(), pr.head.as_str()]),
         "fetched base or PR head differs from the GitHub API"
     );
-    let incoming = incoming_commits_with(&pr.base, &[&pr.head], local)?;
-    let caption = caption::summarize_pr(
-        number,
-        &pr.title,
-        &incoming.subjects,
-        incoming.contains_merge,
-        &Vocabulary::builtin()?,
-    )
-    .map_err(anyhow::Error::msg)?;
+    let vocab = Vocabulary::builtin()?;
+    let incoming = incoming_commits_with(&pr.base, &[&pr.head], &vocab, local)?;
+    let caption = incoming.summarize_pr(number, &pr.title, &vocab)?;
     Ok(caption.title)
 }
 

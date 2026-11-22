@@ -9,6 +9,7 @@
 //! from where a commit sits in the history. A commit that names an earlier version, or
 //! none, was not checked against today's rules: it is not migrated.
 
+use std::borrow::Cow;
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
@@ -17,7 +18,7 @@ use gitmoji_triangle::caption;
 use gitmoji_triangle::check::{check_branch_message, check_stored_message, checked_against};
 use gitmoji_triangle::config::{Config, Level};
 use gitmoji_triangle::subject;
-use gitmoji_triangle::vocabulary::Vocabulary;
+use gitmoji_triangle::vocabulary::{Slot, Vocabulary};
 
 /// One commit as git stores it.
 struct Commit {
@@ -92,24 +93,89 @@ pub(crate) fn git(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// GitHub can store shortcodes in Dependabot's commit while keeping Unicode in its PR title.
+fn dependabot_upgrade<'a>(
+    vocab: &Vocabulary,
+    author: &str,
+    message: &'a str,
+) -> Option<Cow<'a, str>> {
+    if author != "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>" {
+        return None;
+    }
+    let (heading, tail) = message.split_once(" — (")?;
+    let area = heading
+        .strip_suffix(":arrow_up:")
+        .or_else(|| heading.strip_suffix("⬆️"))
+        .or_else(|| heading.strip_suffix("⬆"))?;
+    let (group, entry) = vocab.find_by_code(area).or_else(|| vocab.find(area))?;
+    if group.slot != Slot::Area {
+        return None;
+    }
+    if heading.contains(':') {
+        Some(Cow::Owned(format!("{}⬆️ — ({tail}", entry.emoji)))
+    } else {
+        Some(Cow::Borrowed(message))
+    }
+}
+
+/// Interpret the recorded job heading for checks and inventory without editing the Git object.
+pub(crate) fn dependabot_message<'a>(
+    vocab: &Vocabulary,
+    author: &str,
+    message: &'a str,
+) -> Cow<'a, str> {
+    dependabot_upgrade(vocab, author, message).unwrap_or(Cow::Borrowed(message))
+}
+
 /// Authored commits that become reachable, in topological order, oldest first.
 pub struct IncomingCommits {
     /// Authored subjects in first-appearance order.
     pub subjects: Vec<String>,
     /// Any incoming commit has multiple parents.
     pub contains_merge: bool,
+    /// Indices of the subjects Dependabot also used as default PR titles.
+    dependabot_subjects: Vec<usize>,
+}
+
+impl IncomingCommits {
+    /// A default Dependabot PR title repeats the authored heading. Keep its description once.
+    pub(crate) fn summarize_pr(
+        &self,
+        number: u64,
+        title: &str,
+        vocab: &Vocabulary,
+    ) -> Result<caption::Caption> {
+        let original = caption::without_inventory(title, vocab);
+        // Dependabot can shorten its stored commit subject while retaining versions and paths in the PR title.
+        let title = original
+            .split_once("): ")
+            .and_then(|(heading, summary)| {
+                self.dependabot_subjects
+                    .iter()
+                    .any(|&index| {
+                        self.subjects[index]
+                            .split_once("): ")
+                            .is_some_and(|(bot, _)| bot == heading)
+                    })
+                    .then_some(summary)
+            })
+            .unwrap_or(title);
+        caption::summarize_pr(number, title, &self.subjects, self.contains_merge, vocab)
+            .map_err(anyhow::Error::msg)
+    }
 }
 
 /// Pin the tips before walking their union. A shared ancestor of several heads
 /// appears once, and anything already reachable from the destination is excluded.
-pub fn incoming_commits(base: &str, heads: &[&str]) -> Result<IncomingCommits> {
-    incoming_commits_with(base, heads, git)
+pub fn incoming_commits(base: &str, heads: &[&str], vocab: &Vocabulary) -> Result<IncomingCommits> {
+    incoming_commits_with(base, heads, vocab, git)
 }
 
 /// Use the same graph walk for a local checkout and an isolated Actions fetch.
 pub(crate) fn incoming_commits_with(
     base: &str,
     heads: &[&str],
+    vocab: &Vocabulary,
     git: impl Fn(&[&str]) -> Result<String>,
 ) -> Result<IncomingCommits> {
     if heads.is_empty() {
@@ -147,7 +213,7 @@ pub(crate) fn incoming_commits_with(
         "--no-show-signature",
         "--encoding=UTF-8",
         "-z",
-        "--format=%P%x00%s",
+        "--format=%P%x00%an <%ae>%x00%s",
         &excluded,
     ];
     args.extend(tips.iter().map(String::as_str));
@@ -156,12 +222,19 @@ pub(crate) fn incoming_commits_with(
     let mut fields = log.split_terminator('\0');
     let mut subjects = Vec::new();
     let mut contains_merge = false;
+    let mut dependabot_subjects = Vec::new();
     while let Some(parents) = fields.next() {
+        let author = fields
+            .next()
+            .context("missing author in the incoming commit log")?;
         let subject = fields
             .next()
             .context("missing subject in the incoming commit log")?;
         if parents.split_ascii_whitespace().nth(1).is_some() {
             contains_merge = true;
+        } else if let Some(job) = dependabot_upgrade(vocab, author, subject) {
+            dependabot_subjects.push(subjects.len());
+            subjects.push(job.into_owned());
         } else {
             subjects.push(subject.to_owned());
         }
@@ -169,11 +242,12 @@ pub(crate) fn incoming_commits_with(
     Ok(IncomingCommits {
         subjects,
         contains_merge,
+        dependabot_subjects,
     })
 }
 
 /// The commits of a range, oldest first.
-fn commits(range: &str) -> Result<Vec<Commit>> {
+fn commits(range: &str, vocab: &Vocabulary) -> Result<Vec<Commit>> {
     // Copy the full message, including blank lines, without interpreting its contents.
     let log = git(&[
         "log",
@@ -209,7 +283,7 @@ fn commits(range: &str) -> Result<Vec<Commit>> {
             hash: hash.to_owned(),
             is_merge,
             author: author.to_owned(),
-            message: message.to_owned(),
+            message: dependabot_message(vocab, author, message).into_owned(),
         });
     }
     Ok(listed)
@@ -270,7 +344,7 @@ pub fn explain_commit(vocab: &Vocabulary, config: &Config, revision: &str) -> Re
         "--end-of-options",
         &format!("{revision}^{{commit}}"),
     ])?;
-    let list = commits(&format!("{}^!", id.trim()))?;
+    let list = commits(&format!("{}^!", id.trim()), vocab)?;
     let commit = list.first().context("cannot read the requested commit")?;
     let kind = standing(vocab, config, commit);
     if commit.is_merge {
@@ -330,7 +404,7 @@ pub fn run(
         println!("There are no commits yet.");
         return Ok(ExitCode::SUCCESS);
     }
-    let listed = commits(range.unwrap_or("HEAD"))?;
+    let listed = commits(range.unwrap_or("HEAD"), vocab)?;
     let standings: Vec<Standing> = listed
         .iter()
         .map(|commit| standing(vocab, &config, commit))

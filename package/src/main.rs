@@ -570,15 +570,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             base,
             head,
         } => {
-            let incoming = history::incoming_commits(&base, &[&head])?;
-            let caption = caption::summarize_pr(
-                pr,
-                &title,
-                &incoming.subjects,
-                incoming.contains_merge,
-                &vocab,
-            )
-            .map_err(anyhow::Error::msg)?;
+            let incoming = history::incoming_commits(&base, &[&head], &vocab)?;
+            let caption = incoming.summarize_pr(pr, &title, &vocab)?;
             if json {
                 println!("{}", serde_json::to_string(&caption)?);
             } else {
