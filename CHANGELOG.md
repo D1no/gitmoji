@@ -2,6 +2,11 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.20.2 (22 November 2026)
+
+- After GitHub refuses a direct merge with HTTP 405, `gitmoji github-merge` shows the host's explanation when available and reads the PR once. It compares the current head and base with the reviewed ones and reports the current mergeability state. If checks are settling or the PR now looks ready, review a fresh preview before submitting another merge. Gitmoji never repeats the write automatically. [Handling a refused merge](skills/gitmoji/references/pull-requests.md)
+- To upgrade from 0.20.0 or 0.20.1, set `[vocabulary].version` to `"0.20.2"`, run the standalone installer with `--pinned`, then run `gitmoji init` and `gitmoji doctor`.
+
 ## 0.20.1 (22 November 2026)
 
 - `gitmoji github-merge` now explains why a reviewed merge needs attention. HTTP 405 points to merge requirements, 409 calls for a fresh preview of the current PR head, and 422 points to merge validation. A dropped connection or an unconfirmed response gives the PR URL to inspect before trying again. The command sends the reviewed merge request once. [Direct PR merges](skills/gitmoji/references/pull-requests.md)
