@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview retrospective GitHub PR captions, build a candidate branch or update reviewed PR titles."""
+"""Preview historical branch or GitHub captions, build a candidate branch or update reviewed PR titles."""
 
 import argparse
 from collections import defaultdict
@@ -373,8 +373,31 @@ class Proposal(NamedTuple):
     landing: Optional[int] = None
 
 
+def branch_proposal(oid, old, message):
+    if local_caption(message):
+        return Proposal(subject=old)
+    if not old.startswith(b'Merge '):
+        return None
+    rendered = run('gitmoji', 'merge-message', '--historical', oid)
+    if not rendered:
+        return None
+    subject, separator, inventory = rendered.rstrip(b'\n').partition(b'\n\n')
+    if not separator or not local_caption(rendered):
+        raise ValueError('gitmoji merge-message returned an incomplete branch caption')
+    checked_title(subject.decode('utf-8'), 'branch merge')
+    return Proposal(subject, 'recorded branch direction and incoming Git parents', inventory)
+
+
 def proposal(oid, parents, message, prs):
     old = message.split(b'\n', 1)[0]
+    if prs is None:
+        if len(parents) >= 2:
+            branch = branch_proposal(oid, old, message)
+            if branch is not None:
+                return branch
+            if old.startswith((b'Merge branch', b'Merge remote-tracking branch')):
+                return Proposal(evidence='branch direction is missing or ambiguous in the recorded heading')
+        return Proposal()
     if len(parents) == 2:
         landing = verified_landing(oid, parents, message, prs)
         if landing:
@@ -391,16 +414,8 @@ def proposal(oid, parents, message, prs):
     if matches:
         return Proposal(evidence='one-parent or nonstandard PR landing requires review of the original operation')
     if len(parents) >= 2:
-        if local_caption(message):
-            return Proposal(subject=old)
-        rendered = run('gitmoji', 'merge-message', '--historical', oid)
-        if rendered:
-            subject, separator, inventory = rendered.rstrip(b'\n').partition(b'\n\n')
-            if not separator or not local_caption(rendered):
-                raise ValueError('gitmoji merge-message returned an incomplete branch caption')
-            checked_title(subject.decode('utf-8'), 'branch merge')
-            return Proposal(subject, 'recorded branch direction and incoming Git parents', inventory)
-        return Proposal(evidence='merge without a unique two-parent PR landing or recorded branch direction')
+        return branch_proposal(oid, old, message) or Proposal(
+            evidence='merge without a unique two-parent PR landing or recorded branch direction')
     if len(parents) == 1 and UNDO.match(old):
         if re.match(rb'^(?:Revert|Reapply) #[0-9]+ [^\n]+\n\nSource commit: [0-9a-f]+\nTarget:', message):
             return Proposal(evidence='already captioned undo; retain its original provenance')
@@ -477,8 +492,10 @@ def make_candidate(args):
             raise ValueError('candidate branch name cannot begin with a dash')
         ensure_branch_available(candidate)
     commits = git('rev-list', '--reverse', '--topo-order', *revisions).decode().splitlines()
-    prs = PullRequests(args.repo, args.hostname)
-    prs.index_captions(tip)
+    prs = None
+    if args.repo is not None:
+        prs = PullRequests(args.repo, args.hostname)
+        prs.index_captions(tip)
     title_preview = args.update_pr_titles or args.apply_pr_titles
     title_updates = []
     already_correct = unmatched = 0
@@ -578,10 +595,12 @@ def make_candidate(args):
         new_tip = remapped[tip]
         ensure_branch_available(candidate)
         git('update-ref', '--no-deref', candidate, new_tip, '0' * len(tip))
-    result = {'repository': args.hostname + '/' + args.repo, 'source_tip': tip,
+    result = {'repository': args.hostname + '/' + args.repo if prs is not None else None, 'source_tip': tip,
             'candidate_tip': remapped.get(tip, tip), 'created_branch': args.apply,
             'review_or_changed_commits': changes, 'invalidated_signatures': signed,
             'blocked_mergetags_or_encodings': blocked}
+    if prs is None:
+        result['mode'] = 'local-merges-only'
     if title_preview:
         result['pr_title_summary'] = {'to_change': len(title_updates), 'already_correct': already_correct,
                                       'unmatched': unmatched}
@@ -647,8 +666,11 @@ def apply_pr_titles(prs, reviewed, fresh):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--repo', required=True, metavar='OWNER/REPO', help='repository containing the merged PRs')
-    parser.add_argument('--hostname', default=os.environ.get('GH_HOST') or 'github.com')
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--repo', metavar='OWNER/REPO', help='look up landed PRs in this GitHub repository')
+    mode.add_argument('--local-merges-only', action='store_true',
+                      help='caption recorded branch merges using only local Git objects')
+    parser.add_argument('--hostname', help='GitHub host for --repo (default: GH_HOST or github.com)')
     parser.add_argument('--ref', default='HEAD', help='source tip (default: HEAD)')
     parser.add_argument('--base', help='exclude this ancestor and its history')
     parser.add_argument('--apply', metavar='NEW_LOCAL_BRANCH', help='create a candidate after the dry run')
@@ -664,9 +686,18 @@ def main():
         parser.error('apply the candidate branch and hosted title changes separately')
     if args.expect_candidate and not args.apply:
         parser.error('--expect-candidate requires --apply')
-    if (not re.fullmatch(r'[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+', args.repo)
-            or args.repo.split('/')[1] in {'.', '..'}):
+    if args.local_merges_only and (args.hostname is not None or args.update_pr_titles or args.apply_pr_titles is not None):
+        parser.error('--hostname, --update-pr-titles and --apply-pr-titles require --repo')
+    if args.repo is not None and (not re.fullmatch(r'[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+', args.repo)
+                                 or args.repo.split('/')[1] in {'.', '..'}):
         parser.error('--repo requires OWNER/REPO')
+    if args.local_merges_only:
+        # A partial clone would otherwise let a read of missing objects contact
+        # its promisor remote. Keep offline runs local on older Git versions too.
+        os.environ["GIT_NO_LAZY_FETCH"] = "1"
+        os.environ["GIT_ALLOW_PROTOCOL"] = ""
+    else:
+        args.hostname = args.hostname or os.environ.get('GH_HOST') or 'github.com'
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
         result = make_candidate(args)

@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -244,6 +245,78 @@ class UpgradeHistory(unittest.TestCase):
         again = self.execute(ref='candidate')
         self.assertEqual(again['candidate_tip'], again['source_tip'])
         self.assertEqual(again['review_or_changed_commits'], [])
+
+    def test_offline_cli_repairs_unpublished_history_without_gh_or_a_remote(self):
+        self.assertEqual(self.git('remote'), '')
+        self.git('revert', '--no-edit', '-m', '1', self.merge)
+        undo = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-qc', 'layout')
+        self.git('commit', '--allow-empty', '-qm', '🎨✨ #9 (preview): add layout')
+        self.git('switch', '-qc', 'integration', undo)
+        self.git('commit', '--allow-empty', '-qm', 'prepare integration')
+        self.git('merge', '--no-ff', '--no-edit', 'layout')
+        local = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-qc', 'assembled', undo)
+        self.git('commit', '--allow-empty', '-qm', 'start assembly')
+        self.git('merge', '--no-ff', '--no-commit', 'integration')
+        path = self.git('rev-parse', '--git-path', 'MERGE_MSG')
+        upgrade.run('gitmoji', 'merge-message', path, 'merge')
+        self.git('commit', '--cleanup=verbatim', '-q', '-F', path)
+        assembled = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-q', 'main')
+        self.git('merge', '--no-ff', 'assembled', '-qm', 'Merge pull request #8 from fork/assembled')
+        self.git('branch', '-D', 'layout', 'integration', 'assembled')
+        tip = self.git('rev-parse', 'HEAD')
+
+        # Direct invocation exercises the installed CLI contract, bypassing the
+        # hosted metadata stub used by the other tests. The PATH has no gh.
+        tool_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tool_dir)
+        git_path = Path(shutil.which('git'))
+        binary_name = 'gitmoji.exe' if os.name == 'nt' else 'gitmoji'
+        gitmoji = SCRIPT.parents[3] / 'package/target/debug' / binary_name
+        if not gitmoji.exists():
+            gitmoji = Path(shutil.which(binary_name))
+        (tool_dir / git_path.name).symlink_to(git_path)
+        (tool_dir / binary_name).symlink_to(gitmoji)
+        env = {**os.environ, 'PATH': str(tool_dir), 'GH_HOST': 'unreachable.invalid',
+               'GIT_EXEC_PATH': self.git('--exec-path')}
+        self.assertIsNone(shutil.which('gh', path=env['PATH']))
+
+        def offline(*args):
+            return json.loads(subprocess.check_output(
+                [sys.executable, str(SCRIPT), '--local-merges-only', *args], env=env))
+
+        preview = offline()
+        self.assertIsNone(preview['repository'])
+        self.assertEqual(preview['mode'], 'local-merges-only')
+        self.assertNotIn('pr_title_summary', preview)
+        self.assertNotIn('pr_title_updates', preview)
+        self.assertEqual(preview['source_tip'], tip)
+        applied = offline('--apply', 'offline-candidate', '--expect-candidate', preview['candidate_tip'])
+        self.assertEqual(applied['candidate_tip'], preview['candidate_tip'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), tip)
+        self.assertEqual(self.git('rev-parse', 'offline-candidate^{tree}'), self.git('rev-parse', tip + '^{tree}'))
+        edits = {row['old']: row for row in applied['review_or_changed_commits']}
+        self.assertNotIn(self.merge, edits)
+        self.assertNotIn(undo, edits)
+        self.assertEqual(edits[local]['subject_new'], '[`🎨✨`] layout into integration: add layout')
+        self.assertTrue(edits[assembled]['inventory_updated'])
+        self.assertIn('- ' + edits[local]['candidate'] + ' ' + edits[local]['subject_new'],
+                      self.git('show', '-s', '--format=%B', edits[assembled]['candidate']).splitlines())
+        self.assertEqual(upgrade.read_commit(tip)[2], upgrade.read_commit(applied['candidate_tip'])[2])
+        again = offline('--ref', 'offline-candidate')
+        self.assertEqual(again['candidate_tip'], again['source_tip'])
+        self.assertFalse(again['review_or_changed_commits'])
+
+    def test_offline_cli_rejects_hosted_options(self):
+        for hosted in (['--repo', 'sample/repo'], ['--hostname', 'example.org'],
+                       ['--update-pr-titles'], ['--apply-pr-titles', 'unused.json']):
+            with self.subTest(hosted=hosted):
+                result = subprocess.run([sys.executable, str(SCRIPT), '--local-merges-only', *hosted],
+                                        capture_output=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(hosted[0].encode(), result.stderr)
 
     def test_old_nine_slot_nested_landing_can_expand_after_a_history_rewrite(self):
         self.git('switch', '-qc', 'integration', self.root)

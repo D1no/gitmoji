@@ -52,7 +52,7 @@ A PR that rolls back earlier work carries its own integrating number at the end,
 
 ## Local branch merges
 
-A contributor can merge another branch before their PR lands. For example, if a search branch brings a new feature into an integration branch, its local merge subject can read:
+Branches can merge entirely on one machine. Both names and their incoming intentions come from Git, so the merge needs neither a remote nor a PR number. For example, if a search branch brings a new feature into an integration branch, its local merge subject can read:
 
 ```text
 [`🧩✨`] search into integration: offer saved searches
@@ -89,7 +89,7 @@ For an interactive merge, use `git merge --edit origin/<base>` and append the si
 )
 ```
 
-The commit-msg hook checks and stamps the supplied signature. Use `gitmoji history BASE..HEAD` to check a range or `gitmoji explain --commit HEAD` to identify a particular merge. A subject string alone cannot establish its parentage. GitHub's **Update branch** button cannot run this local hook. Use the [history upgrade preview](upgrade-history.md) for integrations already recorded.
+The commit-msg hook checks and stamps the supplied signature. Use `gitmoji history BASE..HEAD` to check a range or `gitmoji explain --commit HEAD` to identify a particular merge. A subject string alone cannot establish its parentage. GitHub's **Update branch** button cannot run this local hook. Use the [history upgrade preview](upgrade-history.md) for recorded integrations. Its `--local-merges-only` mode works offline.
 
 ## When the merge button is unavailable
 
