@@ -13,6 +13,16 @@ Choose the area the dependencies serve. For example, `🧩⬆ — (deps)` fits a
 
 End the prefix at the closing parenthesis. Dependabot appends the colon and space. Omit `include: scope` when the prefix already contains a parenthesized scope. If an entry has a separate `prefix-development`, give it a complete heading too. Keep the project's ecosystems, directories, groups and schedules. [Dependabot commit-message options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#commit-message)
 
+## Check a prefix before enabling it
+
+Run `gitmoji doctor` in the project to check its configured Dependabot prefixes. To try a Unicode prefix before editing the YAML, pair it with a sample summary and run the text check from the project root.
+
+```sh
+gitmoji check -m '🧑‍💻⬆ — (deps): Bump example from 1.0 to 1.1'
+```
+
+A text-only check has no commit author. For a historical subject containing `:arrow_up:`, use `gitmoji history HEAD^..HEAD` on the fetched bot branch. The history reader can recognize Dependabot’s recorded upgrade spelling from the author on the Git object.
+
 ## Compare the raw commit and the PR title
 
 On a single version update, the signed Git subject and the managed PR title can look like this:

@@ -1,5 +1,6 @@
 //! Read-only diagnostics for a repository's installed Gitmoji components.
 
+mod dependabot;
 mod files;
 mod hooks;
 
@@ -52,6 +53,8 @@ struct Row {
     remedy: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     install: Option<&'static str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
 }
 
 impl Row {
@@ -69,6 +72,7 @@ impl Row {
             expected: expected.into(),
             remedy: remedy.into(),
             install: None,
+            warnings: Vec::new(),
         }
     }
 }
@@ -173,11 +177,9 @@ pub(super) fn run(config: Option<&Path>, json: bool) -> Result<ExitCode> {
         let (pin_row, pin) = pin_row(file.as_deref(), version);
         let mut rows = vec![binary_row(version, pin.as_deref()), pin_row];
         rows.extend(hooks::inspect(&top));
-        rows.extend(files::inspect(
-            &top,
-            pin.as_deref(),
-            &Vocabulary::builtin()?,
-        ));
+        let vocab = Vocabulary::builtin()?;
+        rows.extend(files::inspect(&top, pin.as_deref(), &vocab));
+        rows.extend(dependabot::inspect(&top, file.as_deref(), &vocab));
         rows
     } else {
         vec![Row::new(
@@ -193,6 +195,9 @@ pub(super) fn run(config: Option<&Path>, json: bool) -> Result<ExitCode> {
     } else {
         for row in &rows {
             println!("{}  {}  {}", row.component, row.status, row.found);
+            for warning in &row.warnings {
+                println!("  Warning: {warning}");
+            }
             if !row.status.healthy() {
                 println!("  Expected {}. Remedy: {}", row.expected, row.remedy);
             }
