@@ -2,6 +2,12 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.16.0 (22 November 2026)
+
+- Local branch merges show the source, destination and intentions of incoming commits, including in projects with no remote or pull requests. Their bodies list what arrived and any conflicted paths Git recorded. Local merges and PRs that introduce a merge use up to fourteen visible symbols. Ordinary PRs keep nine. [Examples and signatures](skills/gitmoji/references/pull-requests.md#local-branch-merges)
+- Install 0.16.0, update the project's version pin and run `gitmoji init` to refresh the skill, managed workflows and hooks. Projects with their own Lefthook configuration should add the documented `prepare-commit-msg` command and run `lefthook install` in each clone.
+- The historical upgrade can recover default branch merges with recorded source and destination names. Use `--local-merges-only` for a repository without GitHub. Its preview distinguishes recorded branch merges from PR landings and preserves the links to incoming commits in the candidate. [History upgrade](skills/gitmoji/references/upgrade-history.md)
+
 ## 0.15.1 (21 November 2026)
 
 - Managed workflows and their jobs now use `gitmoji-commits` and `gitmoji-pr-title`. Update the project pin, install this release and run `gitmoji init` to migrate enrolled 0.15.0 workflows. Project-owned files keep their names. When the new checks appear on GitHub, select the Gitmoji check you need and retain any existing requirement for your own `check` job. [Setup and required checks](skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles)

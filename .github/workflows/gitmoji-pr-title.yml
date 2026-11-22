@@ -11,7 +11,7 @@ permissions:
   pull-requests: write
 
 env:
-  GITMOJI_VERSION: '0.15.1'
+  GITMOJI_VERSION: '0.16.0'
 
 jobs:
   gitmoji-pr-title:
