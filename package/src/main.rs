@@ -46,7 +46,11 @@ enum Action {
         /// Two revisions, e.g. v1.0.0..v1.1.0, or a single tip for the first release.
         range: String,
     },
-    /// Check the installation in this working tree without changing it.
+    /// Check the installed binary, release pin, hooks, skill, workflows and Dependabot prefixes.
+    ///
+    /// Reads the current Git worktree. Exit 0 means every component is ok or
+    /// not-enrolled. Exit 1 means at least one component needs attention.
+    /// Each failing row includes a suggested repair.
     Doctor {
         /// Print an array of component results for scripts.
         #[arg(long)]
