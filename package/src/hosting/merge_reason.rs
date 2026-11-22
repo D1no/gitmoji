@@ -1,5 +1,6 @@
 //! Render a GitHub merge denial as a short, single-line diagnostic.
 
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use regex::Regex;
 use serde_json::Value;
 
@@ -34,9 +35,22 @@ pub(super) fn display(value: &Value, credential: &str) -> Option<String> {
     }
     // Keep the rule preceding a reflected authentication header. Omit the
     // rest rather than attempting to parse arbitrary auth schemes and values.
-    let authorization = Regex::new(r"(?i)\b(?:(?:proxy-)?authorization\s*[:=]|bearer\s+\S|basic\s+[a-z0-9+/]{8,}={0,2}\b|(?:access[_-]?token|password|token)\s*[:=])").ok()?;
-    if let Some(header) = authorization.find(&reason) {
-        reason.truncate(header.start());
+    let authorization = Regex::new(r"(?i)\b(?:(?:proxy-)?authorization\s*[:=]|bearer\s+\S|https?://[^/\s@]+@|(?:access[_-]?token|password|token|client_secret)\s*[:=])").ok()?;
+    // A custom check can itself be named "Basic coverage". A Basic
+    // credential encodes a user and password separated by a colon.
+    let basic = Regex::new(r"(?i)\bbasic\s+([a-z0-9+/]+)={0,2}").ok()?;
+    let basic_at = basic.captures_iter(&reason).find_map(|capture| {
+        let decoded = STANDARD_NO_PAD.decode(capture.get(1)?.as_str()).ok()?;
+        decoded.contains(&b':').then_some(capture.get(0)?.start())
+    });
+    if let Some(start) = authorization
+        .find(&reason)
+        .map(|m| m.start())
+        .into_iter()
+        .chain(basic_at)
+        .min()
+    {
+        reason.truncate(start);
         reason.push_str("[redacted]");
     }
     let token = Regex::new(r"(?i)(?:github_pat_|gh[pousr]_)[a-z0-9_-]+(?:\.[a-z0-9_-]+)*").ok()?;
@@ -57,7 +71,7 @@ mod tests {
 
     #[test]
     fn displays_the_host_rule_and_only_the_message_field() {
-        let reason = "GHES rule «Finance» requires sign-off from the release captain.";
+        let reason = "GHES rule «Basic coverage» requires sign-off from the release captain.";
         let body =
             json!({"message": reason, "errors": ["private detail"], "documentation_url": "unused"});
         assert_eq!(display(&body, "").as_deref(), Some(reason));
@@ -96,6 +110,7 @@ mod tests {
             "Bearer arbitrary-token",
             "Basic YWxwaGE6YmV0YQ==",
             "Proxy-Authorization: Scheme credential",
+            "https://user:fixture@example.invalid/",
             "access_token=fixture",
             "password: fixture",
         ] {
