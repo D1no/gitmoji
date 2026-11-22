@@ -21,7 +21,7 @@ git clone https://github.com/D1no/gitmoji.git
 ./gitmoji/install.sh /path/to/your/project
 ```
 
-The installer downloads the binary for your platform and verifies its checksum.
+The installer downloads the binary for your platform and verifies its checksum. Signatures, PR titles, direct merges and history upgrades run in that binary. Repository operations use Git; hosted operations also use your GitHub credentials.
 With a project path, it also installs the skill, settings and Git hooks. Run
 `./gitmoji/install.sh` by itself to install only the command. The CLI, skill
 and vocabulary use one release number. Run `gitmoji --version` to check it.
@@ -30,7 +30,7 @@ and vocabulary use one release number. Run `gitmoji --version` to check it.
 
 On GitHub Actions, run `gitmoji init --github-workflows` in the project to install the PR commit check and title sync. Commit the generated workflows. On upgrade, change `[vocabulary].version` and rerun `gitmoji init` to refresh managed copies. [Workflow setup](skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles)
 
-For another CI system, run the following from the project checkout. The installer reads the release number from `gitmoji.toml` or `.config/gitmoji.toml` using Python 3.11 or later. It fetches the release tag and runs its checksum-verifying installer. Public downloads work without a GitHub token.
+For another CI system, run the following from the project checkout. The installer reads the release number from `gitmoji.toml` or `.config/gitmoji.toml`. It fetches the release tag and runs its checksum-verifying installer. Public downloads work without a GitHub token.
 
 ```sh
 tool=$(mktemp -d)

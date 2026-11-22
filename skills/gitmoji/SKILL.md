@@ -1,7 +1,7 @@
 ---
 name: gitmoji
 description: Write git commits in the Gitmoji Triangle convention (emoji pair, ticket, scope, summary) and split staged work into one decision per commit. Use before planning the commits for a ticket, before every `git commit`, when the `gitmoji` commit-msg hook refuses a subject, when landing a pull request, and when reviewing generated messages in older history.
-compatibility: Needs the gitmoji command on PATH (https://github.com/D1no/gitmoji). The signature scripts need python3.
+compatibility: Uses Git and the released gitmoji binary (https://github.com/D1no/gitmoji).
 ---
 
 # Triangle commits
@@ -164,19 +164,13 @@ Projects can set `signature = "agents"` under `[rules]` to require the model and
 | `Team:` | The other agents you exchanged messages with for this commit. |
 | `Research:` | Web searches, pages read and documentation lookups for this commit. |
 
-**Do not write any of this from memory.** Run the script for your harness in `scripts/`
-in this skill's folder and paste what it prints. The path is relative to the folder this
-file is in, wherever the skill is installed:
+Run `gitmoji signature` in the agent's terminal and append what it prints to the commit body. It reads the current harness session and prints `unknown` for values missing from that record. If detection is ambiguous, use `gitmoji signature --harness codex`, `--harness claude-code` or `--harness antigravity`. Follow the repository's rules for optional names and session IDs.
 
-```
-python3 scripts/claude-code.py
-```
-
-In Claude Code that folder is `${CLAUDE_SKILL_DIR}`. The script reads the harness's own
-record of the session. If your harness has no script there, `scripts/README.md` says how
-to work one out once and add it. Where no record can be found, the script prints
-`unknown`. A repository may ask you to leave a line out, such as the session id; its own
-instructions say so.
+| Harness | Evidence |
+| --- | --- |
+| Claude Code | Session ID, project transcript, effort setting, titles and sub-agent logs |
+| Codex | Current rollout, turn contexts, direct sub-agent records and tool activity |
+| Antigravity | Conversation ID, transcript, rename history and local conversation summaries |
 
 If the session spans several tasks or repositories, check the optional activity lines
 against this commit. Keep only the contributions you can attribute to it.
@@ -211,7 +205,7 @@ Write the human title. Gitmoji maintains its emoji prefix as the commits change.
 Use **Create a merge commit** with the suggested message. GitHub preserves the authored commits and appends the integrating PR number.
 
 For an existing history, use the [upgrade guide](references/upgrade-history.md)
-and the installed `scripts/gitmoji-upgrade-history.py`. Inspect the dry run
+and run `gitmoji history --upgrade`. Inspect the dry run
 before creating a local candidate. Links require evidence of which PR landed.
 A shared-branch replacement is a separate decision for the repository owners.
 

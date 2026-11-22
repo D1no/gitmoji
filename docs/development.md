@@ -10,7 +10,7 @@ each area are in that area's README.
 | Rust | builds `package/` | pinned in `package/rust-toolchain.toml` |
 | lefthook | runs the git hooks | 2.x |
 | `gitmoji` | the hooks call it | a release, or `cargo install --path . --locked` from `package/` |
-| Python 3 | the skill's signature scripts | verified with 3.12 |
+| Python 3 | the repository’s integration test drivers and documentation link check | verified with 3.12 |
 
 After cloning: `lefthook install`. That is once per clone; every worktree of the clone
 then uses the same hooks.

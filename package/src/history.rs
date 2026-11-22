@@ -103,6 +103,15 @@ pub struct IncomingCommits {
 /// Pin the tips before walking their union. A shared ancestor of several heads
 /// appears once, and anything already reachable from the destination is excluded.
 pub fn incoming_commits(base: &str, heads: &[&str]) -> Result<IncomingCommits> {
+    incoming_commits_with(base, heads, git)
+}
+
+/// Use the same graph walk for a local checkout and an isolated Actions fetch.
+pub(crate) fn incoming_commits_with(
+    base: &str,
+    heads: &[&str],
+    git: impl Fn(&[&str]) -> Result<String>,
+) -> Result<IncomingCommits> {
     if heads.is_empty() {
         bail!("a merge caption needs at least one incoming head");
     }

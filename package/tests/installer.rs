@@ -31,6 +31,7 @@ fn shared_skill_upgrade_preserves_index_and_prints_stageable_target_paths() {
     let shared = "team's [shared] skills";
     let skill = repo.join(shared);
     fs::create_dir_all(skill.join("scripts")).unwrap();
+    fs::create_dir_all(skill.join("references")).unwrap();
     symlink(
         format!("../../{shared}"),
         repo.join(".claude/skills/gitmoji"),
@@ -41,10 +42,25 @@ fn shared_skill_upgrade_preserves_index_and_prints_stageable_target_paths() {
     let edit = format!("{shared}/SKILL.md");
     let deletion = format!("{shared}/scripts/claude-code.py");
     let conflict = format!("{shared}/scripts/antigravity.py");
-    let clean = format!("{shared}/scripts/codex.py");
-    for path in [&edit, &deletion, &conflict, &clean] {
+    let retired = format!("{shared}/scripts/README.md");
+    let customized_retired = format!("{shared}/scripts/codex.py");
+    let user_script = format!("{shared}/scripts/custom.py");
+    let clean = format!("{shared}/references/pull-requests.md");
+    for path in [
+        &edit,
+        &deletion,
+        &conflict,
+        &customized_retired,
+        &user_script,
+        &clean,
+    ] {
         fs::write(repo.join(path), "old version\n").unwrap();
     }
+    fs::write(
+        repo.join(&retired),
+        "# Skill scripts\n\nUse the [PR guide](../references/pull-requests.md) for `github-merge.py` and the\n[history upgrade guide](../references/upgrade-history.md) for `gitmoji-upgrade-history.py`.\n\n## Signature scripts, one per harness\n\nA commit made by an agent ends with a signature that says what went into it:\n\n```\n_\n<model> (<effort>), <agent name, only if a person gave one>\n<harness> (<session id, if there is one>)\nSub-agents: <count> × <model> (<effort>), ...      only if sub-agents did part of the work\nTeam: <other agents>                               only if it exchanged messages with others\nResearch: <n> searches, <n> pages, <n> doc lookups only if it looked something up\n```\n\nThe scripts print the underscore. When the commit is made, the hook replaces it by `△` and,\nbetween backticks, the version of the vocabulary the message was checked against.\n\nEvery value comes from the harness's own record of the session, never from the agent's\nmemory. An agent can be wrong about its own model and effort, and a sub-agent can run on\na different model than the agent that started it. The last three lines cover the time\nsince the session's last commit in the repository. On its first commit here, that\nwindow can include earlier tasks or work in another checkout. Check optional counts\nagainst the work in this commit.\n\nEach signature script prints that block for one harness. Run yours and paste the output at the\nend of the commit body:\n\n| Harness | Script | Where the values come from |\n|---|---|---|\n| Claude Code | `claude-code.py` | `CLAUDE_EFFORT`, `CLAUDE_CODE_SESSION_ID`, and the session log under `~/.claude/projects/`: model per reply, `custom-title.json`, `subagents/`, and tool calls for team and research. A shell command such as `curl` is not counted as a page read |\n| Codex | `codex.py` | `CODEX_THREAD_ID` (or `CODEX_SESSION_ID`) selects the rollout in `$CODEX_HOME` or `~/.codex`. Turn contexts give model and effort, a naming message gives the name, and spawn records identify direct helpers. Native sends and agmsg receipts give teammates. Completed web actions, Context7 docs commands and documentation tool calls give research counts for the parent and helpers. |\n| Antigravity | `antigravity.py` | `ANTIGRAVITY_CONVERSATION_ID`, `ANTIGRAVITY_APP_DATA_DIR` (`transcript_full.jsonl` model/effort/team/research, `history.jsonl` `/rename`, and `conversation_summaries.db` sub-agents) |\n\n## If your harness is not listed\n\nWork it out once, then add a script here so the next agent does not have to.\n\n1. Find where your harness records, for this session: the model of each reply, the\n   effort level, the session id, the name a person gave you, and each sub-agent you\n   started with its model and effort. Look at environment variables, the session or\n   transcript log, and per-turn context records.\n2. Write a script that prints the block above from those records. It must not take the\n   values as arguments or guess a default. When a value cannot be found, it prints\n   `unknown` in its place.\n3. Cover the time since your session's last commit in this repository. Count the\n   sub-agents that ran, grouped by model and effort. List the other agents you sent\n   messages to. Count web searches, web pages read and documentation lookups, yours and\n   your sub-agents'. Leave out a line when there is nothing to report.\n4. Add a row to the table, and say in one line where each value comes from.\n",
+    )
+    .unwrap();
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "base"]);
     git(&repo, &["switch", "-qc", "other"]);
@@ -91,6 +107,15 @@ fn shared_skill_upgrade_preserves_index_and_prints_stageable_target_paths() {
     );
     assert_eq!(fs::read(repo.join(&conflict)).unwrap(), conflict_before);
     assert!(!repo.join(&deletion).exists());
+    assert!(!repo.join(&retired).exists());
+    assert_eq!(
+        fs::read_to_string(repo.join(&customized_retired)).unwrap(),
+        "old version\n"
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join(&user_script)).unwrap(),
+        "old version\n"
+    );
     assert_ne!(
         fs::read_to_string(repo.join(&clean)).unwrap(),
         "old version\n"
@@ -100,6 +125,7 @@ fn shared_skill_upgrade_preserves_index_and_prints_stageable_target_paths() {
 
     // Run the exact command that a contributor would copy from the instructions.
     let output = String::from_utf8(run.stdout).unwrap();
+    assert!(output.contains("🔺 gitmoji `"));
     let commands = output
         .split_once("  cd ")
         .unwrap()
@@ -124,6 +150,14 @@ fn shared_skill_upgrade_preserves_index_and_prints_stageable_target_paths() {
         git(&repo, &["--literal-pathspecs", "ls-files", "--", &deletion]),
         ""
     );
+    assert_eq!(
+        git(&repo, &["--literal-pathspecs", "ls-files", "--", &retired]),
+        ""
+    );
+    assert_eq!(
+        git(&repo, &["show", &format!(":{user_script}")]),
+        "old version\n"
+    );
     assert!(
         !git(
             &repo,
@@ -135,6 +169,90 @@ fn shared_skill_upgrade_preserves_index_and_prints_stageable_target_paths() {
         git(&repo, &["show", &format!(":{clean}")]),
         fs::read_to_string(repo.join(clean)).unwrap()
     );
+    fs::remove_dir_all(repo).unwrap();
+}
+
+#[test]
+fn existing_repo_skill_refresh_suggests_import_with_source() {
+    let repo = std::env::temp_dir().join(format!("gitmoji-refresh-skill-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&repo);
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    fs::write(repo.join("lefthook.yml"), "# project-managed hooks\n").unwrap();
+    let first = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .current_dir(&repo)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(first.status.success());
+    assert!(
+        String::from_utf8(first.stdout)
+            .unwrap()
+            .contains("🔺 gitmoji `")
+    );
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "adopt"]);
+
+    let reference = ".claude/skills/gitmoji/references/pull-requests.md";
+    fs::write(repo.join(reference), "outdated reference\n").unwrap();
+    git(&repo, &["add", reference]);
+    git(&repo, &["commit", "-qm", "outdated skill"]);
+
+    let refresh = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .current_dir(&repo)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(refresh.status.success());
+    let out = String::from_utf8(refresh.stdout).unwrap();
+    assert!(out.contains("🤖📥 <ticket> (gitmoji): import the gitmoji skill from v"));
+    assert!(out.contains("Source: https://github.com/D1no/gitmoji/releases/tag/v"));
+    assert!(!out.contains("🤖📝"));
+    fs::remove_dir_all(repo).unwrap();
+}
+
+#[test]
+fn mixed_upgrade_prints_separate_staging_for_imported_and_project_files() {
+    let repo = std::env::temp_dir().join(format!("gitmoji-mixed-upgrade-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&repo);
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    fs::write(repo.join("lefthook.yml"), "# project-managed hooks\n").unwrap();
+    let first = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .current_dir(&repo)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(first.status.success());
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "adopt"]);
+
+    // Modify both an upstream skill file (uncommitted -> creates .before-update backup) and CLAUDE.md.
+    let skill = ".claude/skills/gitmoji/SKILL.md";
+    fs::write(repo.join(skill), "outdated custom skill\n").unwrap();
+    fs::write(repo.join("CLAUDE.md"), "# Project\n").unwrap();
+
+    let mixed = Command::new(env!("CARGO_BIN_EXE_gitmoji"))
+        .current_dir(&repo)
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(mixed.status.success());
+    let out = String::from_utf8(mixed.stdout).unwrap();
+    let (_, after_imported_hdr) = out
+        .split_once("1. Shipped skill and enrolled workflow templates:")
+        .unwrap();
+    let (imported_section, local_section) = after_imported_hdr
+        .split_once("2. Project-owned configuration, hooks, or instructions:")
+        .unwrap();
+    assert!(imported_section.contains(skill));
+    assert!(!imported_section.contains("before-update"));
+    assert!(!imported_section.contains("CLAUDE.md"));
+    assert!(imported_section.contains("🤖📥 <ticket> (gitmoji): import the gitmoji skill from v"));
+    assert!(imported_section.contains("Source: https://github.com/D1no/gitmoji/releases/tag/v"));
+    assert!(local_section.contains("CLAUDE.md"));
+    assert!(!local_section.contains(skill));
+    assert!(!local_section.contains("🤖📥"));
     fs::remove_dir_all(repo).unwrap();
 }
 

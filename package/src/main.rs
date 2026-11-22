@@ -15,8 +15,11 @@ use gitmoji_triangle::staged::Staged;
 use gitmoji_triangle::vocabulary::Vocabulary;
 
 mod history;
+mod hosting;
 mod init;
 mod local_merge;
+mod signature;
+mod upgrade;
 
 #[derive(Parser)]
 #[command(
@@ -35,6 +38,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Action {
+    /// Print the release pinned in the project configuration.
+    Pin,
+    /// Print a commit signature from the active agent session.
+    Signature {
+        /// Select a harness explicitly when session discovery is ambiguous.
+        #[arg(long, value_enum)]
+        harness: Option<signature::Harness>,
+    },
+    /// Synchronize a GitHub pull request title from its incoming commits.
+    PrTitle(hosting::TitleArgs),
+    /// Preview or submit a verified direct merge on GitHub.
+    GithubMerge(hosting::MergeArgs),
     /// Check a commit message. As a commit-msg hook: `gitmoji check --fix {1}`.
     Check {
         /// The file git wrote the message to.
@@ -67,7 +82,13 @@ enum Action {
     History {
         /// The commits to check, as git names a range: `main..HEAD`. Without it, every
         /// commit.
+        #[arg(conflicts_with = "upgrade")]
         range: Option<String>,
+        /// Preview or apply a candidate history, or update verified hosted titles.
+        #[arg(long, conflicts_with = "unmigrated")]
+        upgrade: bool,
+        #[command(flatten)]
+        options: upgrade::Options,
         /// Check only the commits that do not say they were checked against the version
         /// this command speaks: those from an earlier version, and those without the line.
         #[arg(long)]
@@ -141,11 +162,10 @@ enum ExportFormat {
     Text,
 }
 
-/// Reads the settings: the file named on the command line, or the one at the root of
-/// the repository, wherever in it the command is run.
-fn load_config(path: Option<&Path>) -> Result<Config> {
+/// Select the same project configuration from the repository root or a nested directory.
+fn settings_path(path: Option<&Path>) -> Result<Option<PathBuf>> {
     if let Some(path) = path {
-        return Ok(Config::load(path)?);
+        return Ok(Some(path.to_owned()));
     }
     let top = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
@@ -157,7 +177,40 @@ fn load_config(path: Option<&Path>) -> Result<Config> {
         Some(top) => top,
         None => std::env::current_dir().context("cannot tell the current folder")?,
     };
-    match locate(&folder) {
+    Ok(locate(&folder))
+}
+
+/// Read the project's adopted version even if its other settings belong to another release.
+fn pinned_release(path: Option<&Path>) -> Result<String> {
+    let file = settings_path(path)?.context("No Gitmoji settings found in the project")?;
+    let source = std::fs::read_to_string(&file)
+        .with_context(|| format!("cannot read {}", file.display()))?;
+    let settings = source
+        .parse::<toml::Table>()
+        .with_context(|| format!("Cannot read [vocabulary].version from {}", file.display()))?;
+    let value = settings
+        .get("vocabulary")
+        .and_then(|v| v.get("version"))
+        .context("Cannot read [vocabulary].version from project settings")?;
+    let valid = |part: &str| {
+        !part.is_empty()
+            && part.bytes().all(|n| n.is_ascii_digit())
+            && (part == "0" || !part.starts_with('0'))
+    };
+    let version = value
+        .as_str()
+        .filter(|v| v.split('.').count() == 3 && v.split('.').all(valid))
+        .with_context(|| {
+            format!(
+                "Expected a release number such as 1.2.3 in {}",
+                file.display()
+            )
+        })?;
+    Ok(version.to_owned())
+}
+
+fn load_config(path: Option<&Path>) -> Result<Config> {
+    match settings_path(path)? {
         Some(file) => {
             if file.ends_with("triangle.toml") {
                 eprintln!(
@@ -255,7 +308,32 @@ fn staged_files() -> Result<Vec<String>> {
 }
 
 fn run(cli: Cli) -> Result<ExitCode> {
+    if let Action::Pin = cli.command {
+        println!("{}", pinned_release(cli.config.as_deref())?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    if let Action::Signature { harness } = cli.command {
+        println!("{}", signature::render(harness)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    if let Action::PrTitle(args) = cli.command {
+        hosting::sync_title(args)?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    if let Action::GithubMerge(args) = cli.command {
+        hosting::merge(args)?;
+        return Ok(ExitCode::SUCCESS);
+    }
     let vocab = Vocabulary::builtin()?;
+    if let Action::History {
+        upgrade: true,
+        ref options,
+        ..
+    } = cli.command
+    {
+        upgrade::run(options, &vocab)?;
+        return Ok(ExitCode::SUCCESS);
+    }
     if let Action::Init {
         path,
         tickets,
@@ -466,10 +544,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Action::Init { .. } | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
-        Action::History { range, unmigrated } => {
-            history::run(&vocab, config, range.as_deref(), unmigrated)
-        }
+        Action::Pin
+        | Action::Signature { .. }
+        | Action::PrTitle(_)
+        | Action::GithubMerge(_)
+        | Action::Init { .. }
+        | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
+        Action::History {
+            range, unmigrated, ..
+        } => history::run(&vocab, config, range.as_deref(), unmigrated),
         Action::MergeCaption {
             json,
             pr,

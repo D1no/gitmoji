@@ -40,6 +40,8 @@ The workflow uses the current base, head and human title when the PR opens, reop
 
 A single distinct heading stays together. With mixed headings, areas appear on the left and activities, modifiers and markers on the right, in order of first appearance. Repeated symbols use one slot. Three areas fit in full. At four or more, the first two and an ellipsis appear. An ordinary PR shows up to nine visible symbols, counting ellipses. A PR that introduces a merge commit shows up to fourteen. A merge already reachable from the base uses no extra space. If no incoming commit carries a recognized heading, the human title stands alone. Labels such as `[WIP]` remain part of the human title. A trailing reference to this same PR is removed before formatting so the merge gets one number. References to other PRs stay in place.
 
+Open the pull request’s **Commits** tab to review the full sequence of intentions. An ellipsis marks omitted symbols, and even an untruncated title folds repeated symbols together.
+
 From a full local clone, supply the target revision first and the source revision second.
 
 ```sh
@@ -73,7 +75,7 @@ The body lists up to twenty incoming first-parent entries, newest first. Where a
 
 ### Signing a local merge from an agent terminal
 
-For an interactive merge, use `git merge --edit origin/<base>` and append the signature in the editor. In a terminal without an editor, start with `git merge --no-commit origin/<base>`. A fast-forward completes immediately. If there are conflicts, resolve and stage them first. Once a merge commit is pending, run the following from the repository root. Choose the script for the harness actually making the commit (`codex.py`, `claude-code.py` or `antigravity.py`). The example uses the installed skill's default path.
+For an interactive merge, use `git merge --edit origin/<base>` and append the signature in the editor. In a terminal without an editor, start with `git merge --no-commit origin/<base>`. A fast-forward completes immediately. If there are conflicts, resolve and stage them first. Once a merge commit is pending, run the following from the repository root. Gitmoji reads the signature from the active harness session.
 
 ```sh
 (
@@ -84,7 +86,7 @@ For an interactive merge, use `git merge --edit origin/<base>` and append the si
   gitmoji merge-message "$pending" merge
   git stripspace --strip-comments < "$pending" > "$signed"
   printf '\n' >> "$signed"
-  python3 .claude/skills/gitmoji/scripts/codex.py >> "$signed"
+  gitmoji signature >> "$signed"
   git commit --file="$signed"
 )
 ```
@@ -93,10 +95,10 @@ The commit-msg hook checks and stamps the supplied signature. Use `gitmoji histo
 
 ## When the merge button is unavailable
 
-For a direct merge of an ordinary PR, preview the title and body with the installed helper. Run from a full clone with Python 3.9 or later, the Gitmoji CLI and an authenticated GitHub CLI.
+For a direct merge of an ordinary PR, preview the title and body from a full clone. Gitmoji uses the selected GitHub host and credentials. An existing GitHub CLI login can supply those credentials.
 
 ```sh
-python3 .claude/skills/gitmoji/scripts/github-merge.py --repo OWNER/REPO --pr 42
+gitmoji github-merge --repo OWNER/REPO --pr 42
 ```
 
 Review the message, commit coverage and preview digest. Add `--merge --expect-preview REVIEWED_SHA256` to submit that exact proposal. See `--help` for enterprise hosts and preserving a custom message. Use the repository’s normal merge button, stack or queue whenever available.
