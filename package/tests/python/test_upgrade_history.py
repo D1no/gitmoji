@@ -129,6 +129,126 @@ class UpgradeHistory(unittest.TestCase):
             self.execute(apply='candidate')
         self.assertEqual(self.git('rev-parse', 'candidate'), new)
 
+    def test_local_merges_in_a_landed_integration_keep_direction_graph_and_pr_identity(self):
+        self.git('commit', '--amend', '-qm', '[`🎨✨`] Show preview (#7)')
+        self.merge = self.git('rev-parse', 'HEAD')
+        self.pr.update(title='[`🎨✨`] Show preview', mergeCommit={'oid': self.merge})
+        self.git('switch', '-qc', 'worker', self.root)
+        self.git('commit', '--allow-empty', '-qm', '🧩🐛 #9 (worker): recover a cancelled run')
+        self.git('update-ref', 'refs/remotes/origin/worker', 'HEAD')
+        self.git('update-ref', 'refs/remotes/origin/main', self.merge)
+        self.git('switch', '-qc', 'integration', self.root)
+        self.git('commit', '--allow-empty', '-qm', '🧩📝 #9 (worker): explain job recovery')
+        self.git('merge', '--no-ff', '--no-edit', 'origin/main')
+        sync = self.git('rev-parse', 'HEAD')
+        self.git('merge', '--no-ff', '--no-edit', 'origin/worker')
+        original = self.git('show', '-s', '--format=%s', 'HEAD')
+        self.git('commit', '--amend', '-qm', original, '-m', 'Maintainer notes.\n\nReviewed-by: Colleague')
+        worker_merge = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-q', 'main')
+        self.git('merge', '--no-ff', 'integration', '-qm', 'Merge pull request #8 from fork/integration')
+        landing = self.git('rev-parse', 'HEAD')
+        self.prs.append({**self.pr, 'number': 8, 'title': 'Recover jobs',
+                         'mergeCommit': {'oid': landing}, 'headRefName': 'integration'})
+        self.git('branch', '-D', 'worker', 'integration')
+        self.git('update-ref', '-d', 'refs/remotes/origin/worker')
+        self.git('update-ref', '-d', 'refs/remotes/origin/main')
+
+        preview = self.execute(update_pr_titles=True)
+        result = self.execute(apply='repaired', expect_candidate=preview['candidate_tip'])
+        edits = {row['old']: row for row in result['review_or_changed_commits']}
+        self.assertEqual(set(edits), {sync, worker_merge, landing})
+        self.assertEqual(edits[sync]['subject_new'], '[`🎨✨`] main into integration: Show preview (#7)')
+        self.assertIn('worker into integration: recover a cancelled run', edits[worker_merge]['subject_new'])
+        outer = edits[landing]['subject_new']
+        self.assertTrue(outer.endswith('Recover jobs (#8)'))
+        self.assertIn('🐛', outer)
+        self.assertIn('📝', outer)
+        self.assertNotIn('✨', outer, 'that work was already reachable on the landing branch')
+        self.assertEqual(preview['pr_title_summary'], {'to_change': 1, 'already_correct': 1, 'unmatched': 0})
+        self.assertEqual([row['number'] for row in preview['pr_title_updates']], [8])
+        for oid, row in edits.items():
+            after = row['candidate']
+            self.assertEqual(self.git('show', '-s', '--format=%T %an %ae %at %cn %ce %ct', oid),
+                             self.git('show', '-s', '--format=%T %an %ae %at %cn %ce %ct', after))
+            parents = self.git('show', '-s', '--format=%P', oid).split()
+            self.assertEqual(self.git('show', '-s', '--format=%P', after).split(),
+                             [edits.get(p, {}).get('candidate', p) for p in parents])
+            message = self.git('show', '-s', '--format=%B', after)
+            self.assertTrue(message.endswith(self.git('show', '-s', '--format=%B', oid)))
+            self.assertNotIn('Conflicts resolved', message)
+        self.assertIn('Arrived from worker (1):', self.git('show', '-s', '--format=%B',
+                                                           edits[worker_merge]['candidate']))
+        # On a second run, the local sync also ends in (#7). It must never be
+        # indexed as a claim on PR #7, even when the hosted object is unavailable.
+        self.pr['mergeCommit'] = {'oid': '1' * len(self.merge)}
+        replay = self.execute(ref='repaired', update_pr_titles=True)
+        self.assertEqual(replay['source_tip'], replay['candidate_tip'])
+        self.assertFalse(replay['review_or_changed_commits'])
+        self.assertEqual(replay['pr_title_summary'], preview['pr_title_summary'])
+
+    def test_arrived_list_links_to_the_recaptioned_commit_in_the_candidate(self):
+        self.git('switch', '-qc', 'integration', self.root)
+        self.git('commit', '--allow-empty', '-qm', 'prepare integration')
+        self.git('merge', '--no-ff', '--no-edit', 'main')
+        preview = self.execute()
+        self.execute(apply='candidate', expect_candidate=preview['candidate_tip'])
+        incoming = self.git('show', '-s', '--format=%H %s', 'candidate^2')
+        self.assertTrue(incoming.endswith('[`🎨✨`] Show preview (#7)'))
+        self.assertIn('- ' + incoming, self.git('show', '-s', '--format=%B', 'candidate').splitlines())
+
+    def test_old_nine_slot_nested_landing_can_expand_after_a_history_rewrite(self):
+        self.git('switch', '-qc', 'integration', self.root)
+        self.git('commit', '--allow-empty', '-qm', 'start integration')
+        for pair in ('🧱🔧', '🎨✨', '👷📝', '🎨🛂', '👷♻️', '🧱☑️', '🧱🔊'):
+            self.git('commit', '--allow-empty', '-qm', f'{pair} #9 (topic): individual change')
+        self.git('merge', '--no-ff', '--no-edit', 'topic')
+        self.git('switch', '-q', 'main')
+        self.git('reset', '--hard', self.root)
+        old_title = '[`🧱🎨👷` / `🔧✨📝🛂♻️`…] Show preview'
+        self.git('merge', '--no-ff', 'integration', '-qm', old_title + ' (#7)')
+        # As after a previous rewrite in another clone, GitHub's recorded merge
+        # object is absent. The complete prior nine-slot rendering still matches.
+        self.pr['mergeCommit'] = {'oid': '1' * len(self.merge)}
+        plan = self.execute(update_pr_titles=True)
+        landing = plan['review_or_changed_commits'][-1]
+        self.assertIn('unique caption matches', landing['evidence'])
+        self.assertIn('🔊', landing['subject_new'])
+        self.assertNotIn('…', landing['subject_new'])
+        self.assertEqual(plan['pr_title_summary'], {'to_change': 1, 'already_correct': 0, 'unmatched': 0})
+
+    def test_octopus_branch_merge_is_repaired_without_a_hosted_title(self):
+        self.git('switch', '-qc', 'integration', self.root)
+        self.git('commit', '--allow-empty', '-qm', 'start integration')
+        for branch, pair in [('batch', '🧩✨'), ('preview', '🎨🐛')]:
+            self.git('switch', '-qc', branch, self.root)
+            Path(branch).write_text(branch)
+            self.git('add', branch)
+            self.git('commit', '-qm', f'{pair} #9 (topic): show {branch}')
+            self.git('update-ref', 'refs/remotes/origin/' + branch, 'HEAD')
+        self.git('switch', '-q', 'integration')
+        self.git('merge', '--no-ff', '--no-edit', 'origin/batch', 'origin/preview')
+        original = self.git('rev-parse', 'HEAD')
+        plan = self.execute(apply='octopus', update_pr_titles=True)
+        self.assertNotEqual(plan['candidate_tip'], original)
+        self.assertEqual(self.git('show', '-s', '--format=%P', original).split(),
+                         self.git('show', '-s', '--format=%P', 'octopus').split())
+        message = self.git('show', '-s', '--format=%B', 'octopus')
+        self.assertIn('batch, preview into integration: 2 commits', message)
+        self.assertIn('Arrived from batch, preview (2):', message)
+        self.assertEqual(plan['pr_title_summary'], {'to_change': 0, 'already_correct': 0, 'unmatched': 0})
+        self.assertEqual(plan['pr_title_updates'], [])
+
+    def test_missing_direction_and_custom_merge_need_review(self):
+        self.prs.clear()
+        for subject in ("Merge branch 'topic'", 'Merge the assessed work', "Merge branch 'topic' into main manually"):
+            with self.subTest(subject=subject):
+                self.git('commit', '--amend', '-qm', subject)
+                plan = self.execute(update_pr_titles=True)
+                self.assertEqual(plan['source_tip'], plan['candidate_tip'])
+                self.assertIn('review', plan['review_or_changed_commits'][0])
+                self.assertEqual(plan['pr_title_summary']['unmatched'], 1)
+
     def test_native_and_legacy_landing_subjects_converge(self):
         landed = '[`🎨✨`] Show preview (#7)'
         for existing in ('Merge #7 [`🎨✨`] Show preview', landed):

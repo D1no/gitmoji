@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import unicodedata
+from typing import NamedTuple, Optional
 
 
 QUERY = """
@@ -61,6 +62,19 @@ LEGACY_CAPTION = re.compile(rb'^Merge #([1-9][0-9]{0,9}) (\[`.+?\] .+)$')
 LANDED_CAPTION = re.compile(rb'^(\[`.+?\] .+) \(#([1-9][0-9]{0,9})\)$')
 
 
+def local_caption(message):
+    # A local caption can finish with the number of an *arriving* PR. The inventory
+    # paragraph distinguishes it from a landing whose human title contains "into".
+    subject, _, body = message.partition(b'\n\n')
+    if subject.startswith(b'[`'):
+        _, _, subject = subject.partition(b'] ')
+    route, _, summary = subject.partition(b': ')
+    sources, _, target = route.partition(b' into ')
+    return bool(sources and target and summary and re.match(
+        rb'Arrived from ' + re.escape(sources) + rb' \([0-9]+\):(?:\n|$)', body
+    ))
+
+
 def caption_number(subject):
     legacy = LEGACY_CAPTION.fullmatch(subject)
     if legacy:
@@ -107,7 +121,9 @@ class PullRequests:
                 oid, subject = row.split(b'\0', 1)
                 number = caption_number(subject)
                 if number in self.by_number:
-                    self.caption_claims[number].add(oid.decode('ascii'))
+                    oid = oid.decode('ascii')
+                    if b' into ' not in subject or not local_caption(read_commit(oid)[2]):
+                        self.caption_claims[number].add(oid)
 
     def pages(self, query, *variables):
         owner, name = self.repo.split('/')
@@ -298,7 +314,8 @@ def verified_landing(oid, parents, message, prs):
     matches = prs.by_oid.get(oid, [])
     if len(matches) > 1:
         raise ReviewNeeded('multiple merged PRs claim this commit')
-    number = caption_number(old)
+    branch_caption = local_caption(message)
+    number = None if branch_caption else caption_number(old)
     if matches:
         pr = matches[0]
         if number is not None and number != pr['number']:
@@ -307,7 +324,7 @@ def verified_landing(oid, parents, message, prs):
         # edits that differ from the current hosted title. Rebuild its inventory.
         source = pr
         untagged_landing = old.endswith(f' (#{pr["number"]})'.encode()) and not old.startswith(b'Merge ')
-        if number or untagged_landing:
+        if number or (untagged_landing and not branch_caption):
             try:
                 source = {**pr, 'title': old.decode('utf-8')}
             except UnicodeError as error:
@@ -341,33 +358,52 @@ def verified_landing(oid, parents, message, prs):
     suffix = f' (#{number})'.encode()
     while local.endswith(suffix):
         local = local[:-len(suffix)]
-    if local != caption['title'].encode():
+    valid_titles = {caption['title'].encode()}
+    if 'previous_title' in caption:
+        valid_titles.add(caption['previous_title'].encode())
+    if local not in valid_titles:
         raise ReviewNeeded('caption does not match the merged PR title and incoming inventory')
     return pr, caption, 'unique caption matches merged PR title and incoming inventory' + object_evidence
+
+
+class Proposal(NamedTuple):
+    subject: Optional[bytes] = None
+    evidence: Optional[str] = None
+    context: Optional[bytes] = None
+    landing: Optional[int] = None
 
 
 def proposal(oid, parents, message, prs):
     old = message.split(b'\n', 1)[0]
     if len(parents) == 2:
         landing = verified_landing(oid, parents, message, prs)
-        if not landing:
-            return None, 'merge without a unique two-parent PR landing', None
-        pr, result, evidence = landing
-        number = pr['number']
-        caption = result['subject'].encode()
-        # The PR record supplies names even if the branch refs have been deleted.
-        owner = (pr['headRepositoryOwner'] or {}).get('login')
-        source = (owner + ':' if owner else '') + pr['headRefName']
-        route = f"Merged from {source} into {pr['baseRefName']} (PR #{number}).".encode()
-        return caption, evidence, route
+        if landing:
+            pr, result, evidence = landing
+            number = pr['number']
+            # The PR record supplies names even if the branch refs have been deleted.
+            owner = (pr['headRepositoryOwner'] or {}).get('login')
+            source = (owner + ':' if owner else '') + pr['headRefName']
+            route = f"Merged from {source} into {pr['baseRefName']} (PR #{number}).".encode()
+            return Proposal(result['subject'].encode(), evidence, route, number)
     matches = prs.by_oid.get(oid, [])
     if len(matches) > 1:
-        return None, 'multiple merged PRs claim this commit', None
+        return Proposal(evidence='multiple merged PRs claim this commit')
     if matches:
-        return None, 'one-parent or nonstandard PR landing requires review of the original operation', None
+        return Proposal(evidence='one-parent or nonstandard PR landing requires review of the original operation')
+    if len(parents) >= 2:
+        if local_caption(message):
+            return Proposal(subject=old)
+        rendered = run('gitmoji', 'merge-message', '--historical', oid)
+        if rendered:
+            subject, separator, inventory = rendered.rstrip(b'\n').partition(b'\n\n')
+            if not separator or not local_caption(rendered):
+                raise ValueError('gitmoji merge-message returned an incomplete branch caption')
+            checked_title(subject.decode('utf-8'), 'branch merge')
+            return Proposal(subject, 'recorded branch direction and incoming Git parents', inventory)
+        return Proposal(evidence='merge without a unique two-parent PR landing or recorded branch direction')
     if len(parents) == 1 and UNDO.match(old):
         if re.match(rb'^(?:Revert|Reapply) #[0-9]+ [^\n]+\n\nSource commit: [0-9a-f]+\nTarget:', message):
-            return None, 'already captioned undo; retain its original provenance', None
+            return Proposal(evidence='already captioned undo; retain its original provenance')
         pr, depth, target_parents, subject, kind = revert_origin(oid, parents[0], message, prs)
         verb = b'Revert' if depth % 2 else b'Reapply'
         if subject is None:
@@ -379,12 +415,29 @@ def proposal(oid, parents, message, prs):
         introducing = prs.containing_pr(oid)
         if introducing and introducing['number'] != pr['number']:
             route += f' Introduced by PR #{introducing["number"]}.'
-        return caption, 'exact inverse and verified target PR', route.encode()
-    if len(parents) >= 2:
-        return None, 'merge without a unique two-parent PR landing', None
+        return Proposal(caption, 'exact inverse and verified target PR', route.encode())
     if UNDO.match(old) or GENERATED.match(old) or REVERT_TARGET.search(message):
-        return None, 'requires review of the original operation', None
-    return None, None, None
+        return Proposal(evidence='requires review of the original operation')
+    return Proposal()
+
+
+def candidate_inventory(inventory, remapped, new_subjects):
+    # The historical renderer reads the source graph. An arriving merge may
+    # already have a new ID (and subject) earlier in this same candidate.
+    rows = inventory.split(b'\n')
+    for i, row in enumerate(rows):
+        if not row.startswith(b'- '):
+            continue
+        short, _, subject = row[2:].partition(b' ')
+        ids = git('rev-parse', '--disambiguate=' + short.decode('ascii')).splitlines()
+        if len(ids) != 1:
+            raise ValueError('cannot resolve an incoming commit in the source inventory')
+        oid = ids[0].decode('ascii')
+        if oid in remapped:
+            # The candidate object may not exist yet during a read-only preview.
+            # A full ID works in both the preview and the eventual clone.
+            rows[i] = b'- ' + remapped[oid].encode() + b' ' + new_subjects.get(oid, subject)
+    return b'\n'.join(rows)
 
 
 def ensure_branch_available(candidate):
@@ -430,6 +483,7 @@ def make_candidate(args):
     title_updates = []
     already_correct = unmatched = 0
     remapped = {}
+    new_subjects = {}
     changes = []
     signed = []
     blocked = []
@@ -437,15 +491,15 @@ def make_candidate(args):
         fields, parents, message = read_commit(oid)
         subject = message.split(b'\n', 1)[0]
         try:
-            new, reason, route = proposal(oid, parents, message, prs)
+            change = proposal(oid, parents, message, prs)
         except ReviewNeeded as error:
-            new, reason, route = None, str(error), None
+            change = Proposal(evidence=str(error))
+        new, reason, route, landing_number = change
         if title_preview and new is None and (len(parents) >= 2 or oid in prs.by_oid):
             unmatched += 1
-        if title_preview and new is not None and len(parents) == 2:
-            # Every verified landing ends in exactly one same-PR suffix.
-            title, number = new.decode().rsplit(' (#', 1)
-            pr = prs.by_number[int(number[:-1])]
+        if title_preview and landing_number is not None:
+            title = new.decode().removesuffix(f' (#{landing_number})')
+            pr = prs.by_number[landing_number]
             if title != pr['title']:
                 title_updates.append({'number': pr['number'], 'merge_commit': pr['mergeCommit']['oid'],
                                       'source_commit': oid, 'before': pr['title'], 'after': title,
@@ -453,10 +507,17 @@ def make_candidate(args):
             else:
                 already_correct += 1
         if new is not None and new != subject:
+            new_subjects[oid] = new
             # Keep the original subject and complete body, including conflict notes and trailers.
             provenance = b'Source commit: ' + oid.encode() + b'\n'
             if route:
-                provenance += route + b'\n'
+                if len(parents) >= 2 and landing_number is None:
+                    # The first body paragraph also identifies a local merge when its
+                    # summary ends with a reference to one of the arriving PRs.
+                    inventory = candidate_inventory(route, remapped, new_subjects) if remapped else route
+                    provenance = inventory + b'\n\n' + provenance
+                else:
+                    provenance += route + b'\n'
             targets = REVERT_TARGET.findall(message)
             if len(targets) == 1 and targets[0].decode() in remapped:
                 provenance += b'Candidate undo target: ' + remapped[targets[0].decode()].encode() + b'\n'
