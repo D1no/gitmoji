@@ -18,6 +18,7 @@ mod changelog;
 mod doctor;
 mod history;
 mod hosting;
+mod index_policy;
 mod init;
 mod local_merge;
 mod signature;
@@ -277,18 +278,15 @@ fn keeps_comments() -> bool {
         })
 }
 
-/// Git passes MERGE_MSG for an immediate merge and COMMIT_EDITMSG when a person
-/// finishes one. Only exempt those files in the current worktree's Git directory:
-/// an unrelated draft checked during a merge must still be validated.
-fn is_pending_merge_message(file: &Path) -> bool {
+/// True for Git’s message file in the current worktree, including a linked worktree.
+fn is_git_message(file: &Path) -> bool {
     let Some(parent) = file.parent() else {
         return false;
     };
     if !matches!(
         file.file_name().and_then(|name| name.to_str()),
         Some("MERGE_MSG" | "COMMIT_EDITMSG")
-    ) || !parent.join("MERGE_HEAD").is_file()
-        || !file.is_file()
+    ) || !file.is_file()
     {
         return false;
     }
@@ -304,6 +302,12 @@ fn is_pending_merge_message(file: &Path) -> bool {
         if current.status.success() && candidate.status.success() && current.stdout == candidate.stdout)
 }
 
+fn is_pending_merge_message(file: &Path) -> bool {
+    file.parent()
+        .is_some_and(|dir| dir.join("MERGE_HEAD").is_file())
+        && is_git_message(file)
+}
+
 /// The author git is about to record, or nothing when git cannot say.
 fn author_identity() -> Option<String> {
     let output = Command::new("git")
@@ -314,20 +318,6 @@ fn author_identity() -> Option<String> {
         .status
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-fn staged_files() -> Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(["diff", "--cached", "--name-only", "--diff-filter=ACMRD"])
-        .output()
-        .context("cannot run git")?;
-    if !output.status.success() {
-        bail!("git could not list the staged files");
-    }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect())
 }
 
 fn run(cli: Cli) -> Result<ExitCode> {
@@ -395,7 +385,40 @@ fn run(cli: Cli) -> Result<ExitCode> {
         }
         return Ok(ExitCode::SUCCESS);
     }
-    let mut config = load_config(cli.config.as_deref())?;
+    if let Action::Staged = cli.command {
+        let tree = index_policy::tree()?;
+        let mut config = match cli.config.as_deref() {
+            Some(path) => load_config(Some(path))?,
+            None => index_policy::config(&tree)?,
+        };
+        for (_, hint) in &mut config.hints {
+            if let Some((_, entry)) = vocab.find(hint) {
+                hint.clone_from(&entry.emoji);
+            }
+        }
+        let staged = Staged::analyse(&index_policy::files(&tree)?, &config);
+        for line in staged.lines() {
+            eprintln!("gitmoji: {line}");
+        }
+        return Ok(
+            if staged.spans_scopes() && config.one_scope == Level::Error {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            },
+        );
+    }
+    let mut config = match (&cli.command, cli.config.as_deref()) {
+        (
+            Action::Check {
+                file: Some(file),
+                message: None,
+                ..
+            },
+            None,
+        ) if is_git_message(file) => index_policy::config(&index_policy::tree()?)?,
+        (_, path) => load_config(path)?,
+    };
     if let Some(comment) = comment_char() {
         config.comment_char = comment;
     }
@@ -563,22 +586,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 }
             }
         }
-        Action::Staged => {
-            for (_, hint) in &mut config.hints {
-                if let Some((_, entry)) = vocab.find(hint) {
-                    hint.clone_from(&entry.emoji);
-                }
-            }
-            let staged = Staged::analyse(&staged_files()?, &config);
-            for line in staged.lines() {
-                eprintln!("gitmoji: {line}");
-            }
-            if staged.spans_scopes() && config.one_scope == Level::Error {
-                return Ok(ExitCode::FAILURE);
-            }
-            Ok(ExitCode::SUCCESS)
-        }
-        Action::Doctor { .. }
+        Action::Staged
+        | Action::Doctor { .. }
         | Action::Log { .. }
         | Action::Pin
         | Action::Signature { .. }

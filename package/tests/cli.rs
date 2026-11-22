@@ -250,6 +250,7 @@ fn check_should_preserve_only_the_current_worktrees_pending_merge_message() {
         "[rules]\nsignature = 'error'\n",
     )
     .unwrap();
+    git(&worktree, &["add", "gitmoji.toml"]);
     let caption =
         "[`🧩✨`] main into review: Add previews\n\nArrived from main (1):\n- abc1234 Add previews";
     for name in ["MERGE_MSG", "COMMIT_EDITMSG"] {
@@ -611,7 +612,7 @@ fn staged_groups_presentation_variants_and_counts_each_file_once() {
     for file in ["api/client.rs", "lib.rs"] {
         std::fs::write(here.join(file), "").unwrap();
     }
-    git(here, &["add", "api", "lib.rs"]);
+    git(here, &["add", "api", "lib.rs", "gitmoji.toml"]);
     let done = gitmoji(here, &["staged"]);
     assert!(done.status.success(), "{}", text(&done));
     let result = text(&done);
@@ -992,6 +993,7 @@ fn branch_caption_uses_parents_and_body_even_when_it_names_an_arriving_pr() {
     git(&repo, &["commit", "--allow-empty", "-qm", "next"]);
     git(&repo, &["checkout", "-q", "main"]);
     git(&repo, &["merge", "--no-ff", "--no-commit", "side"]);
+    git(&repo, &["add", "gitmoji.toml"]);
     let draft = repo.join(".git/COMMIT_EDITMSG");
     std::fs::write(&draft, msg).unwrap();
     let unsigned = gitmoji(&repo, &["check", "--fix", draft.to_str().unwrap()]);
@@ -1089,4 +1091,290 @@ fn pr_title_explains_the_actions_context_and_local_preview() {
             );
         }
     }
+}
+
+#[test]
+fn staged_policy_follows_only_the_proposed_tree_from_any_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git(repo, &["init", "-q", "-b", "trunk"]);
+    let root = repo.join("gitmoji.toml");
+    let nested = repo.join("web");
+    for folder in ["web", "api", ".config"] {
+        std::fs::create_dir(repo.join(folder)).unwrap();
+    }
+    for path in ["web/view", "api/route"] {
+        std::fs::write(repo.join(path), "initial").unwrap();
+    }
+    let strict = "[rules]\none_scope = 'error'\n[paths]\nweb = ['web/']\napi = ['api/']\n";
+    let warn = strict.replace("'error'", "'warn'");
+    std::fs::write(&root, strict).unwrap();
+    std::fs::write(repo.join(".config/gitmoji.toml"), &warn).unwrap();
+    git(repo, &["add", "api", "web"]);
+    git(repo, &["add", "-N", "gitmoji.toml"]);
+    let staged = || gitmoji(&nested, &["staged"]);
+    let defaults = staged();
+    assert!(defaults.status.success(), "{}", text(&defaults));
+    assert!(!text(&defaults).contains("span 2 scopes"));
+    git(repo, &["add", ".config/gitmoji.toml"]);
+    let warning = staged();
+    assert!(warning.status.success(), "{}", text(&warning));
+    assert!(
+        text(&warning).contains("span 2 scopes"),
+        "{}",
+        text(&warning)
+    );
+    git(repo, &["add", "gitmoji.toml"]);
+    std::fs::write(&root, &warn).unwrap();
+    let refusal = staged();
+    assert!(!refusal.status.success(), "{}", text(&refusal));
+    assert!(
+        text(&refusal).contains("span 2 scopes"),
+        "{}",
+        text(&refusal)
+    );
+    let local = gitmoji(&nested, &["--config", "../gitmoji.toml", "staged"]);
+    assert!(local.status.success(), "{}", text(&local));
+    assert!(text(&local).contains("span 2 scopes"));
+    git(repo, &["commit", "-qm", "adopt strict policy"]);
+    for path in ["web/view", "api/route"] {
+        std::fs::write(repo.join(path), "changed").unwrap();
+    }
+    git(repo, &["add", "api", "web"]);
+    git(repo, &["rm", "--cached", "gitmoji.toml"]);
+    std::fs::write(&root, "invalid toml!").unwrap();
+    let fallback = staged();
+    assert!(fallback.status.success(), "{}", text(&fallback));
+    assert!(text(&fallback).contains("span 2 scopes"));
+    git(repo, &["add", "gitmoji.toml"]);
+    std::fs::write(&root, warn).unwrap();
+    let invalid = staged();
+    assert!(!invalid.status.success());
+    assert!(
+        text(&invalid).contains("cannot read staged gitmoji.toml"),
+        "{}",
+        text(&invalid)
+    );
+}
+
+#[test]
+fn message_hook_uses_the_index_git_prepared_for_a_partial_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git(repo, &["init", "-q", "-b", "trunk"]);
+    git(repo, &["config", "core.hooksPath", ".git/hooks"]);
+    let root = repo.join("gitmoji.toml");
+    std::fs::write(&root, "[rules]\nuntagged = 'error'\n").unwrap();
+    std::fs::write(repo.join("work"), "first").unwrap();
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-qm", "seed"]);
+    for (name, command) in [
+        ("pre-commit", "gitmoji staged"),
+        ("commit-msg", "gitmoji check --fix \"$1\""),
+    ] {
+        let hook = repo.join(".git/hooks").join(name);
+        std::fs::write(&hook, format!("#!/bin/sh\nexec {command}\n")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    std::fs::write(&root, "[rules]\nuntagged = 'warn'\n").unwrap();
+    git(repo, &["add", "gitmoji.toml"]);
+    std::fs::write(repo.join("work"), "second").unwrap();
+    let mut paths = vec![
+        PathBuf::from(env!("CARGO_BIN_EXE_gitmoji"))
+            .parent()
+            .unwrap()
+            .to_path_buf(),
+    ];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    let path = std::env::join_paths(paths).unwrap();
+    let commit = |target| {
+        Command::new("git")
+            .args([
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@example.invalid",
+                "commit",
+                "-qm",
+                "plain subject",
+                "--only",
+                "--",
+                target,
+            ])
+            .current_dir(repo)
+            .env("PATH", &path)
+            .output()
+            .unwrap()
+    };
+    let work = commit("work");
+    assert!(!work.status.success(), "{}", text(&work));
+    assert!(text(&work).contains("gitmoji:"), "{}", text(&work));
+    let policy = commit("gitmoji.toml");
+    assert!(policy.status.success(), "{}", text(&policy));
+    let draft = repo.join("draft.txt");
+    std::fs::write(&draft, "plain subject").unwrap();
+    std::fs::write(&root, "[rules]\nuntagged = 'error'\n").unwrap();
+    assert!(
+        !gitmoji(repo, &["check", draft.to_str().unwrap()])
+            .status
+            .success()
+    );
+    assert!(
+        !gitmoji(repo, &["check", "-m", "plain subject"])
+            .status
+            .success()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn staged_policy_follows_links_only_inside_the_proposed_tree() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "trunk"]);
+    std::fs::create_dir(repo.join("policy")).unwrap();
+    let settings = repo.join("policy/gitmoji.toml");
+    let root = repo.join("gitmoji.toml");
+    std::fs::write(&settings, "invalid TOML").unwrap();
+    symlink("policy/gitmoji.toml", &root).unwrap();
+    git(&repo, &["add", "."]);
+    std::fs::write(&settings, "").unwrap();
+    let staged = || gitmoji(&repo, &["staged"]);
+    let invalid = staged();
+    assert!(!invalid.status.success());
+    assert!(text(&invalid).contains("cannot read staged gitmoji.toml"));
+    git(&repo, &["add", "policy/gitmoji.toml"]);
+    assert!(staged().status.success());
+
+    std::fs::remove_file(&root).unwrap();
+    std::fs::write(dir.path().join("outside.toml"), "").unwrap();
+    symlink("../outside.toml", &root).unwrap();
+    git(&repo, &["add", "gitmoji.toml"]);
+    let external = staged();
+    assert!(!external.status.success());
+    assert!(text(&external).contains("inside the repository"));
+}
+
+#[test]
+fn unresolved_policy_requires_staging_a_resolution() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git(repo, &["init", "-q", "-b", "trunk"]);
+    let root = repo.join("gitmoji.toml");
+    std::fs::write(&root, "[rules]\none_scope = 'off'\n").unwrap();
+    git(repo, &["add", "gitmoji.toml"]);
+    git(repo, &["commit", "-qm", "base"]);
+    git(repo, &["checkout", "-qb", "other"]);
+    std::fs::write(&root, "[rules]\none_scope = 'warn'\n").unwrap();
+    git(repo, &["commit", "-qam", "warn"]);
+    git(repo, &["checkout", "-q", "trunk"]);
+    std::fs::write(&root, "[rules]\none_scope = 'error'\n").unwrap();
+    git(repo, &["commit", "-qam", "enforce"]);
+    let merge = Command::new("git")
+        .current_dir(repo)
+        .args([
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@example.invalid",
+            "merge",
+            "--no-commit",
+            "other",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(merge.status.code(), Some(1), "{}", text(&merge));
+    std::fs::write(&root, "[rules]\none_scope = 'warn'\n").unwrap();
+    let unresolved = gitmoji(repo, &["staged"]);
+    assert!(!unresolved.status.success());
+    assert!(text(&unresolved).contains("cannot read the staged tree"));
+    git(repo, &["add", "gitmoji.toml"]);
+    assert!(gitmoji(repo, &["staged"]).status.success());
+}
+
+#[test]
+fn staged_scope_counts_a_path_that_changed_type() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git(repo, &["init", "-q", "-b", "trunk"]);
+    std::fs::write(
+        repo.join("gitmoji.toml"),
+        "[rules]\none_scope = 'error'\n[paths]\nassets = ['icon']\napp = ['view']\n",
+    )
+    .unwrap();
+    std::fs::write(repo.join("icon"), "view").unwrap();
+    std::fs::write(repo.join("view"), "one").unwrap();
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-qm", "seed"]);
+    std::fs::write(repo.join("view"), "two").unwrap();
+    git(repo, &["add", "view"]);
+    // Mode 120000 stages a symlink, including on filesystems without symlink support.
+    let blob = Command::new("git")
+        .current_dir(repo)
+        .args(["rev-parse", "HEAD:icon"])
+        .output()
+        .unwrap();
+    assert!(blob.status.success(), "{}", text(&blob));
+    let oid = std::str::from_utf8(&blob.stdout).unwrap().trim();
+    git(
+        repo,
+        &["update-index", "--cacheinfo", &format!("120000,{oid},icon")],
+    );
+    let result = gitmoji(repo, &["staged"]);
+    assert!(!result.status.success());
+    assert!(
+        text(&result).contains("span 2 scopes: app (1), assets (1)"),
+        "{}",
+        text(&result)
+    );
+}
+
+#[test]
+fn directory_and_submodule_entries_do_not_hide_the_next_policy_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git(repo, &["init", "-q", "-b", "trunk"]);
+    std::fs::create_dir(repo.join(".config")).unwrap();
+    std::fs::write(repo.join(".config/gitmoji.toml"), "bad TOML!").unwrap();
+    std::fs::create_dir(repo.join("gitmoji.toml")).unwrap();
+    std::fs::write(repo.join("gitmoji.toml/file"), "hello").unwrap();
+    git(repo, &["add", "."]);
+    let assert_fallback = || {
+        let result = gitmoji(repo, &["staged"]);
+        assert!(!result.status.success());
+        assert!(
+            text(&result).contains("cannot read staged .config/gitmoji.toml"),
+            "{}",
+            text(&result)
+        );
+    };
+    assert_fallback();
+    git(repo, &["commit", "-qm", "seed"]);
+    git(repo, &["rm", "-qr", "gitmoji.toml"]);
+    let head = Command::new("git")
+        .current_dir(repo)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(head.status.success());
+    let oid = std::str::from_utf8(&head.stdout).unwrap().trim();
+    git(
+        repo,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{oid},gitmoji.toml"),
+        ],
+    );
+    assert_fallback();
 }
