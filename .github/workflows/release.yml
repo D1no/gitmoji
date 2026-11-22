@@ -1,5 +1,5 @@
-# Publishes a release when a version is tagged: one binary per platform, their
-# checksums, and notes taken from CHANGELOG.md. See .github/README.md.
+# Publish the five platform binaries, standalone installer, checksums, and
+# changelog entry for a version tag. See .github/README.md.
 name: Release
 
 on:
@@ -17,7 +17,7 @@ jobs:
       matrix:
         include:
           - { target: aarch64-apple-darwin, runner: macos-latest, native: true }
-          - { target: x86_64-apple-darwin, runner: macos-latest, native: false }
+          - { target: x86_64-apple-darwin, runner: macos-15-intel, native: true }
           - { target: x86_64-unknown-linux-musl, runner: ubuntu-latest, native: true }
           - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm, native: true }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest, native: true }
@@ -64,6 +64,10 @@ jobs:
             cp "target/$TARGET/release/gitmoji" "../dist/gitmoji-$TARGET"
           fi
 
+      - name: Install the packaged binary in a project without development tools
+        if: runner.os != 'Windows'
+        run: sh ../.github/scripts/check-release-install.sh "$TARGET" "${GITHUB_REF_NAME#v}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: gitmoji-${{ matrix.target }}
@@ -97,9 +101,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
+          sed "s/^installer_release=''$/installer_release='$version'/" install.sh > dist/install.sh
           cd dist
-          chmod +x gitmoji-*
-          sha256sum gitmoji-* > SHA256SUMS
+          chmod +x gitmoji-* install.sh
+          sha256sum gitmoji-* install.sh > SHA256SUMS
           ls -l
           # The release notes are the changelog's entry for this version.
           awk -v v="$version" '
@@ -114,4 +119,4 @@ jobs:
           fi
           printf '\nFull history: [CHANGELOG.md](https://github.com/%s/blob/trunk/CHANGELOG.md)\n' "$GITHUB_REPOSITORY" >> notes.md
           gh release create "$GITHUB_REF_NAME" --title "gitmoji $version" \
-            --notes-file notes.md --verify-tag gitmoji-* SHA256SUMS
+            --notes-file notes.md --verify-tag gitmoji-* install.sh SHA256SUMS

@@ -122,9 +122,9 @@ fn pin_row(file: Option<&Path>, binary: &str) -> (Row, Option<String>) {
 fn binary_row(binary: &str, pin: Option<&str>) -> Row {
     match pin {
         Some(pin) if pin != binary => {
-            // The parsed pin contains only release-number digits and dots.
+            // Use this CLI's installer: an older project pin may predate the release asset.
             let remedy = format!(
-                "tool=$(mktemp -d) && git clone --quiet --depth 1 --branch v{pin} https://github.com/D1no/gitmoji.git \"$tool/source\" && \"$tool/source/install.sh\""
+                "installer=$(mktemp) && url=https://github.com/D1no/gitmoji/releases/download/v{binary}/install.sh && (curl -fsSL -o \"$installer\" \"$url\" || wget -q -O \"$installer\" \"$url\") && sh \"$installer\" --pinned"
             );
             Row {
                 install: Some("install.sh --pinned"),
