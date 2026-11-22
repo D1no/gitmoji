@@ -2,6 +2,13 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.19.0 (22 November 2026)
+
+- Draft release notes with `gitmoji changelog FROM..TO`. For a first release, pass its tag alone. Each landed pull request appears once with its tickets and breaking changes. Projects can set their own audience groups. The draft uses merge-preserving history and leaves the final wording to the release editor. [Changelog guide](package/README.md#draft-release-notes)
+- Use a Gitmoji prefix for Dependabot version updates. The managed commit check and PR title workflow recognize the upgrade in single and grouped bot commits, including when GitHub stores it as a shortcode. [Dependabot setup](skills/gitmoji/references/dependabot.md)
+- Download the standalone `install.sh` from the release and run `sh install.sh --pinned` in your project to install its adopted version without cloning Gitmoji. The installer checks the platform binary against the release checksums and preserves an identical installation. [Installation](README.md#install)
+- To adopt this release, set `[vocabulary].version` to `"0.19.0"`, install the pin and run `gitmoji init` to refresh installed skill files and enrolled workflows. Run `gitmoji doctor` to verify your installation.
+
 ## 0.18.0 (22 November 2026)
 
 - Run `gitmoji doctor` inside a checkout for a read-only, offline report on the running binary, project pin, effective Git hooks, installed skill and enrolled workflows. The report works from linked worktrees and supports plain Git and Lefthook. [Installation checks](package/README.md#check-an-installation)
