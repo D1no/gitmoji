@@ -243,7 +243,7 @@ fn submit(
         };
         if let Some(reason) = reason {
             bail!(
-                "GitHub rejected the merge (HTTP {}): {reason}. {advice} {url}",
+                "GitHub rejected the merge (HTTP {}): {reason}\n{advice} {url}",
                 status.as_u16()
             );
         }
@@ -276,7 +276,7 @@ fn submit(
         }
         Some(false) => {
             if let Some(reason) = super::merge_reason::display(&outcome, &client.token) {
-                bail!("GitHub did not merge the pull request: {reason}. Check {url}");
+                bail!("GitHub did not merge the pull request: {reason}\nCheck {url}");
             }
             bail!("GitHub did not merge the pull request. Check {url}");
         }
