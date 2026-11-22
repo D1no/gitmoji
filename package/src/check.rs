@@ -687,7 +687,7 @@ fn check_signature(
         report_at(
             report,
             signature_level,
-            "an agent signs the end of the body: an underscore on its own line, the model with its effort, the harness with its session, and where they apply lines for Sub-agents, Team and Research. Take every value from the harness's record with the script for your harness in the skill's scripts folder. Run `gitmoji guide message`".to_string(),
+            "an agent signs the end of the body: an underscore on its own line, the model with its effort, the harness with its session, and where they apply lines for Sub-agents, Team and Research. Run `gitmoji signature` in the agent session and append its output. Run `gitmoji guide message`".to_string(),
         );
     }
 }

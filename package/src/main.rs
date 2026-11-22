@@ -17,6 +17,7 @@ use gitmoji_triangle::vocabulary::Vocabulary;
 mod history;
 mod init;
 mod local_merge;
+mod signature;
 
 #[derive(Parser)]
 #[command(
@@ -35,6 +36,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Action {
+    /// Print a commit signature from the active agent session.
+    Signature {
+        /// Select a harness explicitly when session discovery is ambiguous.
+        #[arg(long, value_enum)]
+        harness: Option<signature::Harness>,
+    },
     /// Check a commit message. As a commit-msg hook: `gitmoji check --fix {1}`.
     Check {
         /// The file git wrote the message to.
@@ -255,6 +262,10 @@ fn staged_files() -> Result<Vec<String>> {
 }
 
 fn run(cli: Cli) -> Result<ExitCode> {
+    if let Action::Signature { harness } = cli.command {
+        println!("{}", signature::render(harness)?);
+        return Ok(ExitCode::SUCCESS);
+    }
     let vocab = Vocabulary::builtin()?;
     if let Action::Init {
         path,
@@ -466,7 +477,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Action::Init { .. } | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
+        Action::Signature { .. }
+        | Action::Init { .. }
+        | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
         Action::History { range, unmigrated } => {
             history::run(&vocab, config, range.as_deref(), unmigrated)
         }
