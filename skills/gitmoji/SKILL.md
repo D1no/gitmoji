@@ -35,13 +35,17 @@ Review: https://github.com/OWNER/REPO/pull/17#discussion_r12349
 Addresses: [https://github.com/OWNER/REPO/pull/17#discussion_r12345, https://github.com/OWNER/REPO/issues/42#issuecomment-67890]
 ```
 
-Use `gitmoji signature --review URL` and repeat `--addresses URL` for each finding. Gitmoji writes one list. A human can enter the trailers directly. After committing, reply to the reviewer with the fixing SHA and invite them to verify the change.
+Use `gitmoji signature --review URL` and repeat `--addresses URL` for each finding. Gitmoji writes one list. A human can enter the trailers directly. Push the fixing commit and confirm it is on the remote PR branch before replying with its SHA. After a rebase, use the review permalink to find the replacement commit on the current branch and update any stale reply.
 
 Explain in the body why the affected files belong to one decision. If a reviewer could accept one fix and defer the other, give each its own commit and relevant links. The PR inventory counts each inner decision once. To retrieve the fields from a stored commit:
 
 ```sh
 git show -s --format='%(trailers:key=Review,key=Addresses)' HEAD
 ```
+
+**Across commits and review rounds.** Several independently reviewable commits can cite the same finding. When a later review reopens it, put the new actionable comment in `Review` and include the earlier thread in `Addresses` if it helps explain the fix. If two findings contributed equally to one decision, choose the clearest entry point as `Review`. A tool building a finding-to-commit index should use the union of both fields and retain every matching commit on the current PR branch.
+
+If you address a finding differently than suggested, explain the choice in the commit body and in your reply. If a redesign already removed the affected code, explain that in the thread. A request fulfilled by updating only the PR description also needs just a reply.
 
 The vocabulary is large on purpose, and you do not need to hold it in your head. The
 `gitmoji` command hands it out in small pieces. Read only the piece you need.
