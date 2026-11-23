@@ -159,6 +159,22 @@ repository, see [upgrading history](../skills/gitmoji/references/upgrade-history
 
 `gitmoji merge-message <message-file> [source]` is the prepare-commit-msg entry point for local branch merges. `gitmoji explain --commit HEAD` reads the stored parents and message to identify a local caption. [Branch merge setup and examples](../skills/gitmoji/references/pull-requests.md#local-branch-merges)
 
+## Provisional pull requests
+
+Run `gitmoji init --provisional-workflow` with a project pin of 0.21.0 or later. Commit the generated workflow and reviewer instructions. This is a separate enrollment from `--github-workflows`. In the base repository, set the Actions variable `GITMOJI_PROVISIONAL_LABEL` to the issue label you use, or use the default `provisional`. Set `GITMOJI_PROVISIONAL_BACKLINK` to `true` to leave one backlink comment per PR on the issue.
+
+Each incoming 🚧 or 🧪 commit, including those in a mixed PR, must name the same open, labeled issue in the base repository. The workflow updates its marked section of the PR description. Gitmoji reports an unmarked PR as ordinary and removes a previous managed section when the last provisional commit leaves the PR. A reviewer can run the same check from a checkout or a job with read access:
+
+```sh
+gitmoji provisional-pr --repo OWNER/REPO --pr 42 --label provisional --check --json
+```
+
+Use `--hostname HOST` on GitHub Enterprise. On success the JSON includes `policy` (`ordinary` or `provisional`), `follow_up_issue` (number or null), `modifiers`, `pr`, `base` and `head`. An API or policy error returns `policy: "error"` and exit 1. Pass `--expect-head SHA` in a job tied to a particular revision. Apply normal review when a job cannot verify the policy. A successful provisional check leaves build, test, security, and commit requirements in force.
+
+The managed workflow uses the trusted base repository and an isolated bare fetch of the destination branch and PR refs. It publishes the `gitmoji/provisional` status on the PR head commit. Require that status to enforce this policy on protected branches. Keep each open PR on its own tip when this status gates merging. GitHub shares a status context across PRs that point to the same SHA. After updating a follow-up issue’s state or label, rerun **Gitmoji provisional follow-up** with the PR number, or run a fresh read-only check immediately before merge. If status writes are unavailable, the workflow fails and GitHub can still show a previously published result. [GitHub commit statuses](https://docs.github.com/en/rest/commits/statuses)
+
+Gitmoji reads the PR body and head again before writing. If someone edits the description at the same instant as GitHub applies the update, check the PR edit history and rerun. GitHub provides no conditional update for the PR description. [GitHub conditional requests](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#use-conditional-requests-if-appropriate)
+
 ## Where things are
 
 | Path | What it is |

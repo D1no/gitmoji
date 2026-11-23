@@ -1,9 +1,11 @@
 //! GitHub PR operations on the caller's host and repository.
 mod merge;
 mod merge_reason;
+mod provisional;
 mod title;
 
 pub(crate) use merge::{MergeArgs, merge};
+pub(crate) use provisional::{ProvisionalArgs, provisional_pr};
 pub(crate) use title::{TitleArgs, sync_title};
 
 use std::env;

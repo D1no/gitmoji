@@ -78,6 +78,8 @@ enum Action {
     },
     /// Synchronize a GitHub pull request title from its incoming commits.
     PrTitle(hosting::TitleArgs),
+    /// Check a provisional PR’s follow-up issue or synchronize its PR body.
+    ProvisionalPr(hosting::ProvisionalArgs),
     /// Preview or submit a verified direct merge on GitHub.
     GithubMerge(hosting::MergeArgs),
     /// Check a commit message. As a commit-msg hook: `gitmoji check --fix {1}`.
@@ -173,6 +175,9 @@ enum Action {
         /// Install or update the GitHub workflows for PR titles and commit checks.
         #[arg(long)]
         github_workflows: bool,
+        /// Enroll in the provisional follow-up check and its reviewer instructions.
+        #[arg(long)]
+        provisional_workflow: bool,
     },
     /// Print the version of the vocabulary this command speaks.
     Vocabulary,
@@ -357,6 +362,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         hosting::sync_title(args)?;
         return Ok(ExitCode::SUCCESS);
     }
+    if let Action::ProvisionalPr(args) = cli.command {
+        return hosting::provisional_pr(args);
+    }
     if let Action::GithubMerge(args) = cli.command {
         hosting::merge(args)?;
         return Ok(ExitCode::SUCCESS);
@@ -378,6 +386,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         path,
         tickets,
         github_workflows,
+        provisional_workflow,
     } = &cli.command
     {
         // Before the settings are read: a repository that has none yet is the usual case.
@@ -386,6 +395,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             path.as_deref().unwrap_or(Path::new(".")),
             *tickets,
             *github_workflows,
+            *provisional_workflow,
         )?;
         return Ok(ExitCode::SUCCESS);
     }
@@ -624,6 +634,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         | Action::Pin
         | Action::Signature { .. }
         | Action::PrTitle(_)
+        | Action::ProvisionalPr(_)
         | Action::GithubMerge(_)
         | Action::Init { .. }
         | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
@@ -638,7 +649,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             head,
         } => {
             let incoming = history::incoming_commits(&base, &[&head], &vocab)?;
-            let caption = incoming.summarize_pr_with_tickets(pr, &title, &vocab, |ticket| config.is_ticket(ticket))?;
+            let caption = incoming
+                .summarize_pr_with_tickets(pr, &title, &vocab, |ticket| config.is_ticket(ticket))?;
             if json {
                 println!("{}", serde_json::to_string(&caption)?);
             } else {

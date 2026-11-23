@@ -9,7 +9,7 @@ use gitmoji_triangle::vocabulary::Vocabulary;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::{Client, valid_pr};
-use crate::history::incoming_commits_with;
+use crate::history::{IncomingCommits, incoming_commits_with};
 
 const TITLE_HELP: &str = "pr-title updates the title on GitHub. The managed Actions workflow supplies \
     GITHUB_SERVER_URL, GITHUB_API_URL, GITHUB_REPOSITORY and GITMOJI_TITLE_TOKEN.\n\n\
@@ -25,14 +25,20 @@ pub(crate) struct TitleArgs {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct Pull {
+pub(super) struct Pull {
     title: String,
     branch: String,
-    base: String,
-    head: String,
+    pub(super) base: String,
+    pub(super) head: String,
 }
 
-fn oid(id: &str) -> bool {
+impl Pull {
+    pub(super) fn same_refs(&self, other: &Self) -> bool {
+        self.branch == other.branch && self.base == other.base && self.head == other.head
+    }
+}
+
+pub(super) fn oid(id: &str) -> bool {
     matches!(id.len(), 40 | 64)
         && id
             .bytes()
@@ -41,7 +47,10 @@ fn oid(id: &str) -> bool {
 
 impl Client {
     fn open_pull(&self, number: u64) -> Result<Option<Pull>> {
-        let pr = self.get_pull(number)?;
+        self.pull_refs(number, &self.get_pull(number)?)
+    }
+
+    pub(super) fn pull_refs(&self, number: u64, pr: &serde_json::Value) -> Result<Option<Pull>> {
         ensure!(
             pr["number"].as_u64() == Some(number),
             "GitHub returned a different PR"
@@ -147,7 +156,13 @@ fn git(directory: &Path, args: &[&str], credential: Option<(&str, &str)>) -> Res
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn proposal(remote: &str, token: &str, number: u64, pr: &Pull) -> Result<String> {
+pub(super) fn fetch_incoming(
+    remote: &str,
+    token: &str,
+    number: u64,
+    pr: &Pull,
+    vocab: &Vocabulary,
+) -> Result<IncomingCommits> {
     let checkout = tempfile::Builder::new()
         .prefix("gitmoji-pr-title-")
         .tempdir()?;
@@ -180,10 +195,13 @@ fn proposal(remote: &str, token: &str, number: u64, pr: &Pull) -> Result<String>
         fetched.lines().eq([pr.base.as_str(), pr.head.as_str()]),
         "fetched base or PR head differs from the GitHub API"
     );
+    incoming_commits_with(&pr.base, &[&pr.head], vocab, local)
+}
+
+fn proposal(remote: &str, token: &str, number: u64, pr: &Pull) -> Result<String> {
     let vocab = Vocabulary::builtin()?;
-    let incoming = incoming_commits_with(&pr.base, &[&pr.head], &vocab, local)?;
-    let caption = incoming.summarize_pr(number, &pr.title, &vocab)?;
-    Ok(caption.title)
+    let incoming = fetch_incoming(remote, token, number, pr, &vocab)?;
+    Ok(incoming.summarize_pr(number, &pr.title, &vocab)?.title)
 }
 
 fn synchronize(
