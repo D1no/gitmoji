@@ -202,7 +202,7 @@ fn summarize(
             }
             rank = rank.min(*groups.get(area).unwrap_or(&fallback));
         }
-        if let Some(ticket) = subject.split_whitespace().nth(1)
+        if let Some(ticket) = heading.ticket
             && config.is_ticket(ticket)
         {
             tickets.insert(ticket);

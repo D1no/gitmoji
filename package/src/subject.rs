@@ -49,6 +49,11 @@ pub enum SubjectError {
     /// Nothing to read.
     #[error("the subject is empty")]
     Empty,
+    /// The review-response prefix was used without one enclosed authored heading.
+    #[error(
+        "a review response starts with 👌 followed by one emoji heading in angle brackets and backticks, for example: 👌 <`🎨🐛`> #9 (feed): repair the preview"
+    )]
+    ReviewHeading,
     /// The ticket was written before the emojis.
     #[error(
         "the emojis come first and the ticket second: 🧩👔 {ticket} (scope): summary, not {ticket} 🧩👔 ..."
@@ -282,6 +287,32 @@ pub fn is_generated(line: &str) -> bool {
     generated_reason(line).is_some()
 }
 
+/// Prefix for work prompted by code review.
+pub const REVIEW_RESPONSE: &str = "👌";
+/// Shortcode accepted by the hook for the review-response prefix.
+pub const REVIEW_RESPONSE_CODE: &str = ":ok_hand:";
+
+/// Split the leading emoji cluster from the ticket and the rest of the subject.
+///
+/// The boolean identifies a review response. Callers validate the inner tags
+/// using the same vocabulary and repository rules as for an ordinary decision.
+pub fn authored_heading(line: &str) -> Result<(&str, &str, bool), SubjectError> {
+    let (first, rest) = line.split_once(' ').unwrap_or((line, ""));
+    if !first.starts_with(REVIEW_RESPONSE) {
+        return Ok((first, rest, false));
+    }
+    if first != REVIEW_RESPONSE {
+        return Err(SubjectError::ReviewHeading);
+    }
+    let (wrapped, tail) = rest.split_once(' ').unwrap_or((rest, ""));
+    let cluster = wrapped
+        .strip_prefix("<`")
+        .and_then(|value| value.strip_suffix("`>"))
+        .filter(|value| !value.is_empty() && !value.contains(['`', '<', '>']))
+        .ok_or(SubjectError::ReviewHeading)?;
+    Ok((cluster, tail, true))
+}
+
 /// Reads one subject line.
 pub fn parse<'v>(
     vocab: &'v Vocabulary,
@@ -298,7 +329,7 @@ pub fn parse<'v>(
     if let Some(marker) = leading_marker(vocab, line) {
         return Ok(Subject::Marker(marker));
     }
-    let (cluster, rest) = line.split_once(' ').unwrap_or((line, ""));
+    let (cluster, rest, _) = authored_heading(line)?;
     if cluster.contains('`') {
         return Err(SubjectError::Backticks {
             example: vocab.format.example.clone(),
@@ -494,6 +525,80 @@ mod tests {
                 scope
             ),
         })
+    }
+
+    #[test]
+    fn review_response_exposes_one_ordinary_heading_and_uses_its_ticket_rules() {
+        let reviewed = "👌 <`🎨🐛🚧`> #19 (feed): repair the preview";
+        assert_eq!(
+            authored_heading(reviewed).unwrap(),
+            ("🎨🐛🚧", "#19 (feed): repair the preview", true)
+        );
+        assert_eq!(
+            read(reviewed),
+            read("🎨🐛🚧 #19 (feed): repair the preview")
+        );
+        assert!(matches!(
+            read("👌 <`🎨🐛🚧`> — (feed): repair the preview"),
+            Err(SubjectError::ModifierWithoutTicket { .. })
+        ));
+        let vocab = Vocabulary::builtin().unwrap();
+        let config =
+            Config::from_toml("[ticket]\npatterns = ['WORK-[0-9]+']\n[scope]\nallowed = ['feed']")
+                .unwrap();
+        assert!(
+            parse(
+                &vocab,
+                &config,
+                "👌 <`🎨🐛`> WORK-7 (feed): repair the preview"
+            )
+            .is_ok()
+        );
+        assert!(matches!(
+            parse(&vocab, &config, reviewed),
+            Err(SubjectError::BadTicket { .. })
+        ));
+        assert!(matches!(
+            parse(
+                &vocab,
+                &config,
+                "👌 <`🎨🐛`> WORK-7 (other): repair the preview"
+            ),
+            Err(SubjectError::BadScope { .. })
+        ));
+    }
+
+    #[test]
+    fn review_response_rejects_generated_forms_invalid_tags_and_inventories() {
+        for inner in [
+            "🎨",
+            "🎨🐛☑️",
+            "🔖",
+            "🚧",
+            "👌",
+            "Merge",
+            "Revert",
+            "🎨 / 🐛",
+            "🐛`",
+            "",
+        ] {
+            let line = format!("👌 <`{inner}`> #9 (feed): fix the preview");
+            assert!(read(&line).is_err(), "{line}");
+        }
+        for opening in [
+            "👌",
+            "👌🏼 <`🎨🐛`>",
+            "👌<`🎨🐛`>",
+            "👌 <🎨🐛>",
+            "👌 [`🎨🐛`]",
+            "👌  <`🎨🐛`>",
+            "👌 <`🎨🐛`>suffix",
+        ] {
+            assert!(
+                read(&format!("{opening} #9 (feed): fix the preview")).is_err(),
+                "{opening}"
+            );
+        }
     }
 
     #[test]

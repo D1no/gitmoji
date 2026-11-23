@@ -104,6 +104,39 @@ pub struct Retired {
     pub note: String,
 }
 
+/// Canonical review-response heading and the optional provenance field in its message.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ReviewResponseFormat {
+    /// The subject grammar, including literal delimiters.
+    pub subject: String,
+    /// A complete example subject.
+    pub example: String,
+    /// When to use the wrapper.
+    pub meaning: String,
+    /// Selection of the main discussion and its specific findings.
+    pub link_guidance: String,
+    /// Typed fields in the final Git trailer paragraph, in presentation order.
+    pub trailers: Vec<ReviewTrailer>,
+}
+
+/// A Git trailer carrying evidence for a review-driven change.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ReviewTrailer {
+    /// Canonical Git trailer name.
+    pub name: String,
+    /// Wire format of the trailer value.
+    pub value_format: String,
+    /// Whether every review response needs this field.
+    pub required: bool,
+    /// Whether the trailer name can be repeated.
+    pub repeatable: bool,
+    /// Other field required when this trailer is present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<String>,
+    /// Complete trailer line.
+    pub example: String,
+}
+
 /// The shape of a subject, with examples.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Format {
@@ -115,6 +148,9 @@ pub struct Format {
     pub job_example: String,
     /// A marker commit.
     pub marker_example: String,
+    /// Available in vocabularies supporting review-response commits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_response: Option<ReviewResponseFormat>,
 }
 
 fn release_version() -> String {

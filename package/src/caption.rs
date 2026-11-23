@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::config::Config;
-use crate::subject::read_tags;
+use crate::subject::{REVIEW_RESPONSE, authored_heading, read_tags};
 use crate::vocabulary::{Slot, Token, Vocabulary};
 
 const AREA_LIMIT: usize = 3;
@@ -12,7 +12,13 @@ const MERGE_LIMIT: usize = 14;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 /// Vocabulary symbols in an authored subject, independent of current project policy.
-pub struct Heading<'v> {
+pub struct Heading<'s, 'v> {
+    /// The authored inner cluster, before normalizing variation selectors.
+    cluster: &'s str,
+    /// First token after the cluster, including after a review-response wrapper.
+    pub ticket: Option<&'s str>,
+    /// True for an explicitly authored review response.
+    pub review_response: bool,
     /// Canonical area symbol, when present.
     pub area: Option<&'v str>,
     /// Canonical activity or marker symbol.
@@ -21,7 +27,7 @@ pub struct Heading<'v> {
     pub modifier: Option<&'v str>,
 }
 
-impl<'v> Heading<'v> {
+impl<'v> Heading<'_, 'v> {
     /// Canonical symbols in their authored order, including standalone markers.
     pub fn symbols(self) -> impl Iterator<Item = &'v str> {
         [self.area, Some(self.activity), self.modifier]
@@ -31,26 +37,34 @@ impl<'v> Heading<'v> {
 
     /// Display the leading emoji run canonically, retaining the original spacing and text.
     pub fn display(self, subject: &str) -> String {
-        let trimmed = subject.trim_start();
-        let start = subject.len() - trimmed.len();
-        let end = start + trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
-        let mut shown = String::from(&subject[..start]);
-        shown.extend(self.symbols());
-        shown.push_str(&subject[end..]);
-        shown
+        subject.replacen(self.cluster, &self.symbols().collect::<String>(), 1)
     }
 }
 
 /// Read the leading symbols of a historical authored subject.
-pub fn heading<'v>(subject: &str, vocab: &'v Vocabulary) -> Option<Heading<'v>> {
-    let cluster = subject.split_whitespace().next()?;
+pub fn heading<'s, 'v>(subject: &'s str, vocab: &'v Vocabulary) -> Option<Heading<'s, 'v>> {
+    let trimmed = subject.trim_start();
+    let (cluster, rest, review_response) = if trimmed.starts_with(REVIEW_RESPONSE) {
+        authored_heading(trimmed).ok()?
+    } else {
+        // Older bare headings can separate their fields with tabs or other whitespace.
+        let (cluster, rest) = trimmed
+            .split_once(char::is_whitespace)
+            .unwrap_or((trimmed, ""));
+        (cluster, rest, false)
+    };
+    let ticket = rest.split_whitespace().next();
     if cluster.is_ascii() {
         return None;
     }
     if let Some((group, entry)) = vocab.find(cluster)
         && group.slot == Slot::Marker
+        && !review_response
     {
         return Some(Heading {
+            cluster,
+            ticket,
+            review_response,
             area: None,
             activity: &entry.emoji,
             modifier: None,
@@ -59,6 +73,9 @@ pub fn heading<'v>(subject: &str, vocab: &'v Vocabulary) -> Option<Heading<'v>> 
     // A historical heading may come from a different ticket, scope or area policy.
     let tags = read_tags(vocab, true, cluster).ok()?;
     Some(Heading {
+        cluster,
+        ticket,
+        review_response,
         area: tags.area.map(|e| e.emoji.as_str()),
         activity: &tags.second.1.emoji,
         modifier: tags.modifier.map(|e| e.emoji.as_str()),
@@ -412,7 +429,8 @@ impl<'v> Inventory<'v> {
                 continue;
             };
             inventory.recognized += 1;
-            inventory.one_heading &= item == *first.get_or_insert(item);
+            let authored_tags = (item.area, item.activity, item.modifier);
+            inventory.one_heading &= authored_tags == *first.get_or_insert(authored_tags);
             if let Some(area) = item.area {
                 push_distinct(&mut inventory.areas, area);
             }
@@ -423,7 +441,7 @@ impl<'v> Inventory<'v> {
                     .modifier_tickets
                     .entry(modifier.to_owned())
                     .or_default();
-                if let Some(ticket) = subject.split_whitespace().nth(1)
+                if let Some(ticket) = item.ticket
                     && ticket != "—"
                     && is_ticket(ticket)
                     && !tickets.iter().any(|seen| seen == ticket)

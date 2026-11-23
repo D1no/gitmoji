@@ -4,9 +4,12 @@ mod antigravity;
 mod claude;
 mod codex;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use chrono::DateTime;
 use clap::ValueEnum;
+use gitmoji_triangle::trailers::{
+    ADDRESSES_LINK_ERROR, REVIEW_LINK_ERROR, valid_review_address, valid_review_link,
+};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,7 +28,7 @@ pub(crate) enum Harness {
 }
 
 impl Harness {
-    fn detected() -> Result<Self> {
+    fn detected() -> Result<Option<Self>> {
         let mut present = Vec::new();
         if env("CLAUDECODE") == "1"
             || !env("CLAUDE_CODE_ENTRYPOINT").is_empty()
@@ -40,10 +43,8 @@ impl Harness {
             present.push(Self::Antigravity);
         }
         match present.as_slice() {
-            [one] => Ok(*one),
-            [] => bail!(
-                "no agent session detected; select --harness claude-code, codex or antigravity"
-            ),
+            [one] => Ok(Some(*one)),
+            [] => Ok(None),
             _ => bail!(
                 "several agent sessions detected; select --harness claude-code, codex or antigravity"
             ),
@@ -51,17 +52,39 @@ impl Harness {
     }
 }
 
-pub(crate) fn render(harness: Option<Harness>) -> Result<String> {
+pub(crate) fn render(
+    harness: Option<Harness>,
+    review: Option<&str>,
+    addresses: &[String],
+) -> Result<String> {
+    ensure!(review.is_none_or(valid_review_link), REVIEW_LINK_ERROR);
+    ensure!(
+        addresses.iter().all(|url| valid_review_address(url)),
+        ADDRESSES_LINK_ERROR
+    );
     let harness = match harness {
-        Some(harness) => harness,
+        Some(chosen) => Some(chosen),
         None => Harness::detected()?,
     };
-    let sig = match harness {
-        Harness::ClaudeCode => claude::read(),
-        Harness::Codex => codex::read(),
-        Harness::Antigravity => antigravity::read(),
+    let mut lines = match harness {
+        Some(Harness::ClaudeCode) => claude::read().lines(),
+        Some(Harness::Codex) => codex::read().lines(),
+        Some(Harness::Antigravity) => antigravity::read().lines(),
+        None if review.is_some() => Vec::new(),
+        None => {
+            bail!("no agent session detected; select --harness claude-code, codex or antigravity")
+        }
     };
-    Ok(sig.lines().join("\n"))
+    if let Some(url) = review {
+        if !lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines.push(format!("Review: {url}"));
+        if !addresses.is_empty() {
+            lines.push(format!("Addresses: [{}]", addresses.join(", ")));
+        }
+    }
+    Ok(lines.join("\n"))
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]

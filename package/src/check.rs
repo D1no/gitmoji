@@ -2,7 +2,7 @@
 
 use crate::config::{Config, Level, SignatureRule};
 use crate::subject::{self, Subject, Ticket};
-use crate::trailers::{VERSION_MARK, records, trailer};
+use crate::trailers::{VERSION_MARK, check_review_links, records, trailer};
 use crate::vocabulary::{Vocabulary, normalize};
 
 /// What a check found.
@@ -194,7 +194,7 @@ fn names_a_version(subject: &str) -> bool {
         })
 }
 
-/// Trailers that say who was involved are not a reason for a change.
+/// Attribution and provenance identify the source without explaining the change.
 fn names_people(key: &str) -> bool {
     [
         "signed-off-by",
@@ -413,6 +413,8 @@ fn check_with_source(
     }
     let parsed = subject::parse(vocab, config, subject_line);
     let is_marker = matches!(parsed, Ok(Subject::Marker(_)));
+    let review_response = matches!(parsed, Ok(Subject::Tagged { .. }))
+        && subject_line.trim().starts_with(subject::REVIEW_RESPONSE);
     let length = subject_line.trim().chars().count();
     if length > config.subject_max {
         let text = format!(
@@ -454,6 +456,9 @@ fn check_with_source(
         }) => {
             let (_, second) = tags.second;
             let mut reading = String::new();
+            if review_response {
+                reading.push_str("Review response: ");
+            }
             if let Some(area) = tags.area {
                 reading.push_str(&area.name);
                 reading.push_str(": ");
@@ -520,9 +525,31 @@ fn check_with_source(
     // The trailers as git reads them: one record per trailer, however it was folded.
     // They end the message, after the block that closes the body, where git and its
     // hosts look for them. Some authors put them before that block instead.
+    let metadata_only =
+        |key: &str| names_people(key) || (review_response && matches!(key, "review" | "addresses"));
     let last = records(&tail, |_| false);
-    let reason_after = last.iter().any(|record| !names_people(&record.key));
+    let reason_after = last.iter().any(|record| !metadata_only(&record.key));
     let mut trailers = records(body, is_closing);
+    if review_response {
+        // Git exposes only the final trailer paragraph. A review link just
+        // before the signature, or attached to it without a blank line, would
+        // disappear from git log's trailer fields even when the URL is valid.
+        let review_key = |key: &str| matches!(key, "review" | "addresses");
+        let in_signature = body
+            .rsplit(|line| line.trim().is_empty())
+            .find(|paragraph| !paragraph.is_empty() && !is_closing(paragraph))
+            .is_some_and(|paragraph| {
+                (paragraph[0] == "_" || version_line(paragraph[0]).is_some())
+                    && paragraph
+                        .iter()
+                        .any(|line| trailer(line).is_some_and(|(key, _)| review_key(&key)))
+            });
+        if in_signature || trailers.iter().any(|record| review_key(&record.key)) {
+            report.errors.push("Place Review: and Addresses: in the final Git trailer paragraph, separated from the signature or prose by a blank line.".to_owned());
+        } else if let Err(problem) = check_review_links(&last) {
+            report.errors.push(problem.to_owned());
+        }
+    }
     trailers.extend(last);
     // A co-author is looked for in those, and on any single line that reads as one, so
     // that a credit git would not parse is refused all the same.
@@ -592,17 +619,17 @@ fn check_with_source(
     // Only the trailers before the closing block sit among the lines counted here.
     let before: Vec<_> = records(body, is_closing)
         .into_iter()
-        .filter(|record| names_people(&record.key))
+        .filter(|record| metadata_only(&record.key))
         .collect();
-    let about_people: Vec<usize> = before
+    let metadata: Vec<usize> = before
         .iter()
         .flat_map(|record| record.lines.iter().copied())
         .collect();
     let said = content
         .iter()
         .any(|(index, line)| {
-            !about_people.contains(index)
-                && !trailer(line).is_some_and(|(key, _)| names_people(&key))
+            !metadata.contains(index)
+                && !trailer(line).is_some_and(|(key, _)| metadata_only(&key))
                 // A version line left over above the closing block is not a reason.
                 && version_line(line).is_none()
         })
@@ -824,6 +851,77 @@ mod tests {
         let person =
             "🧩👔 #1 (server): x\n\nWhy.\n\nCo-authored-by: Example Person <person@cursor.com>\n";
         assert!(check_with("", person, None).passed());
+    }
+
+    #[test]
+    fn a_review_response_can_cite_a_conversation_and_its_individual_findings() {
+        let subject = "👌 <`🧩🐛`> #1 (feed): retain the selected item";
+        let why = "The review traced the loss to sorting.";
+        let review = "Review: https://code.example.com/pull/3#discussion_r4";
+        let addresses = "Addresses: [https://work.ghe.com/a/b/issues/6#issuecomment-3]";
+        let links = format!("{review}\n{addresses}");
+        let human = "[rules]\ndescription = 'error'\nsignature = 'off'";
+        let agent = "[rules]\ndescription = 'error'\nsignature = 'error'";
+        let signature = "_\nexample (high)\nCodex";
+        for (rules, body) in [
+            (human, why.to_string()),
+            (human, format!("{why}\n\n{review}")),
+            (human, format!("{why}\n\n{links}")),
+            (agent, format!("{why}\n\n{signature}\n\n{links}")),
+        ] {
+            let report = check_with(rules, &format!("{subject}\n\n{body}"), None);
+            assert!(report.passed(), "{report:?}");
+            assert!(report.reading.unwrap().starts_with("Review response: "));
+        }
+        assert!(!check_with(human, &format!("{subject}\n\n{links}"), None).passed());
+        assert!(!check_with(agent, &format!("{subject}\n\n{links}\n\n{signature}"), None).passed());
+        for signature in [signature, "△ `0.21.0`\nexample (high)\nCodex", "△ `0.21.0`"] {
+            for body in [
+                format!("{why}\n\n{links}\n\n{signature}"),
+                format!("{why}\n\n{signature}\n{links}"),
+                format!("{why}\n\n{signature}\n{links}\n\n△ `0.21.0`"),
+                format!("{why}\n\n{review}\n\n{signature}\n\n{addresses}"),
+            ] {
+                let report = check_with(human, &format!("{subject}\n\n{body}"), None);
+                assert!(
+                    report
+                        .errors
+                        .iter()
+                        .any(|e| e.contains("final Git trailer paragraph")),
+                    "{body}: {report:?}"
+                );
+            }
+        }
+        // A quoted example in the prose is not review metadata.
+        let example = format!("{subject}\n\n{why}\n\n```text\n{review}\n```\n\n{signature}");
+        assert!(check_with(agent, &example, None).passed());
+        for (tail, expected) in [
+            (format!("{review}\n{review}"), "at most one Review:"),
+            (addresses.to_owned(), "requires a primary Review:"),
+            (
+                format!("{review}\n{addresses}\n{addresses}"),
+                "at most one Addresses:",
+            ),
+            (
+                format!("{review}\nAddresses: #42"),
+                "Addresses: needs one bracketed list",
+            ),
+            ("Review:".to_owned(), "Review: needs"),
+            (
+                "Review: https://host/review\n continuation".to_owned(),
+                "Review: needs",
+            ),
+        ] {
+            let report = check_with(human, &format!("{subject}\n\n{why}\n\n{tail}"), None);
+            assert!(
+                report.errors.iter().any(|e| e.contains(expected)),
+                "{tail}: {report:?}"
+            );
+        }
+        // Existing project-defined trailer semantics on ordinary subjects survive migration.
+        let old = "🧩🐛 #1 (feed): retain the selected item\n\nReview: maintainer sign-off\nReview: QA sign-off\nAddresses: UX-12";
+        let report = check_with(human, old, None);
+        assert!(report.passed() && !report.reading.unwrap().starts_with("Review response: "));
     }
 
     #[test]

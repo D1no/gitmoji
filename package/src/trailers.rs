@@ -15,6 +15,60 @@ pub fn trailer(line: &str) -> Option<(String, &str)> {
     well_formed.then(|| (name.to_lowercase(), value.trim()))
 }
 
+/// A review permalink identifies where the feedback came from. Accept HTTPS hosts
+/// independent of the forge; validating the link must also work offline.
+pub fn valid_review_link(value: &str) -> bool {
+    if value
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '\\' | '<' | '>' | '"'))
+    {
+        return false;
+    }
+    let Ok(uri) = value.parse::<ureq::http::Uri>() else {
+        return false;
+    };
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    let host = authority.host();
+    uri.scheme_str() == Some("https")
+        && !host.is_empty()
+        && !authority.as_str().contains('@')
+        && (authority.as_str() == host || authority.port_u16().is_some())
+}
+
+/// The argument and the corresponding Git trailer both take exactly one permalink.
+pub const REVIEW_LINK_ERROR: &str = "Review: needs one absolute HTTPS URL for the primary conversation. Omit the review trailers for verbal feedback.";
+/// The stored list uses a comma and a space between finding links.
+pub const ADDRESSES_LINK_ERROR: &str = "Addresses: needs one bracketed list of absolute HTTPS URLs. Separate links with a comma and a space. Encode a literal comma immediately before https:// in a URL as %2C.";
+
+/// A single finding must round-trip through the bracketed list. A bare
+/// `,https://` would also read as two links written without their separator.
+pub fn valid_review_address(value: &str) -> bool {
+    let ambiguous = b",https://";
+    valid_review_link(value)
+        && !value
+            .as_bytes()
+            .windows(ambiguous.len())
+            .any(|part| part.eq_ignore_ascii_case(ambiguous))
+}
+
+/// Read the bracketed list of findings in the author's order. Ordinary commas in
+/// paths and queries remain part of their URL.
+pub fn review_addresses(value: &str) -> Option<Vec<&str>> {
+    let inner = value.strip_prefix('[')?.strip_suffix(']')?;
+    if inner.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    inner
+        .split(", ")
+        .map(|part| {
+            let url = part.trim();
+            valid_review_address(url).then_some(url)
+        })
+        .collect()
+}
+
 /// The sign that opens the closing block of a stored message, before the version of
 /// the vocabulary the message was checked against: `△ `2.0.0``. The hook writes that
 /// line. It is a plain triangle, not the 🔺 emoji, so that a search finds only it.
@@ -29,6 +83,44 @@ pub struct Record {
     pub value: String,
     /// Which of the lines given hold it: the first, and any indented ones that continue it.
     pub lines: Vec<usize>,
+}
+
+/// Validate the optional review provenance on an authored review response.
+/// Ordinary commits can use these trailer names for their repository's own purposes.
+pub fn check_review_links(records: &[Record]) -> Result<(), &'static str> {
+    let mut primary = false;
+    let mut addresses = false;
+    for record in records {
+        match record.key.as_str() {
+            "review" => {
+                if primary {
+                    return Err(
+                        "A review response has at most one Review: trailer. Use Addresses: for additional findings.",
+                    );
+                }
+                if record.lines.len() != 1 || !valid_review_link(&record.value) {
+                    return Err(REVIEW_LINK_ERROR);
+                }
+                primary = true;
+            }
+            "addresses" => {
+                if addresses {
+                    return Err(
+                        "A review response has at most one Addresses: trailer. Combine the findings in one bracketed list.",
+                    );
+                }
+                if record.lines.len() != 1 || review_addresses(&record.value).is_none() {
+                    return Err(ADDRESSES_LINK_ERROR);
+                }
+                addresses = true;
+            }
+            _ => {}
+        }
+    }
+    if addresses && !primary {
+        return Err("Addresses: requires a primary Review: URL for the conversation.");
+    }
+    Ok(())
 }
 
 /// The trailers of a message body, given as its lines after the subject and the empty
@@ -102,6 +194,51 @@ mod tests {
         records(&lines, |paragraph| {
             paragraph.first().is_some_and(|line| line.trim() == "_")
         })
+    }
+
+    #[test]
+    fn addresses_preserve_order_ipv6_and_commas_that_belong_to_a_url() {
+        let first = "https://[2001:db8::7]:8443/pull/13/files#diff-1";
+        let second = "https://review.example/a,b?refs=one,two";
+        let embedded = "https://review.example/go?refs=a%2Chttps://example.test/path";
+        let list = format!("[{first}, {second}, {embedded}]");
+        assert_eq!(review_addresses(&list), Some(vec![first, second, embedded]));
+        assert_eq!(review_addresses("[]"), Some(Vec::new()));
+        for bad in [
+            "https://host/single",
+            "[https://host/one, nope]",
+            "[https://first.test/a,https://second.test/pull/1]",
+            "[https://first.test/a,HTTPS://second.test/pull/1]",
+            "[, https://host]",
+            "[https://first, ]",
+            "[http://host]",
+        ] {
+            assert_eq!(review_addresses(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn review_links_accept_https_forges_without_fetching_the_source() {
+        for url in [
+            "https://github.com/sample/project/pull/17#discussion_r42",
+            "https://review.ghe.com:8443/sample/project/pull/17/files#diff-abc",
+            "https://github.com/sample/project/discussions/3#discussioncomment-12",
+            "https://code.example/changes/13?view=review#comments",
+        ] {
+            assert!(valid_review_link(url), "{url}");
+        }
+        for invalid in [
+            "https://",
+            "https:///a/path",
+            "http://code.example/42",
+            "#42",
+            "https://a:bad/p",
+            "https://name:password@code.example/review",
+            "https://host/x y",
+            "https://host/review#one\nAddresses: https://host/other",
+        ] {
+            assert!(!valid_review_link(invalid), "{invalid}");
+        }
     }
 
     #[test]

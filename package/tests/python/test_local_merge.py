@@ -44,6 +44,13 @@ class LocalMerges(unittest.TestCase):
     def message(self):
         return self.git("log", "-1", "--format=%B")
 
+    def test_review_fix_contributes_its_intent_to_a_local_merge(self):
+        self.git("switch", "-qc", "review")
+        self.commit("👌 <`🎨🐛`> #7 (ui): restore the tab order")
+        self.git("switch", "trunk")
+        self.git("merge", "--no-ff", "review", "--no-edit")
+        self.assertEqual(self.message().splitlines()[0], "[`🎨🐛`] review into trunk: restore the tab order")
+
     def test_conflict_and_custom_comment_character(self):
         self.git("config", "core.commentChar", ";")
         self.commit("set base", "shared", "base")

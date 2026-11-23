@@ -75,6 +75,12 @@ enum Action {
         /// Select a harness explicitly when session discovery is ambiguous.
         #[arg(long, value_enum)]
         harness: Option<signature::Harness>,
+        /// Link the reviewer’s original actionable request or specific comment.
+        #[arg(long, value_name = "URL")]
+        review: Option<String>,
+        /// Link a concrete finding in the primary review. Repeat for additional findings.
+        #[arg(long, requires = "review", value_name = "URL")]
+        addresses: Vec<String>,
     },
     /// Synchronize a GitHub pull request title from its incoming commits.
     PrTitle(hosting::TitleArgs),
@@ -114,7 +120,7 @@ enum Action {
     Staged,
     /// Show authored commits whose heading contains a vocabulary emoji, newest first.
     ///
-    /// Search any slot in the authored heading. Merge commits and emoji mentioned only in
+    /// Search any slot in the authored heading, or use 👌 for a review response. Merge commits and emoji mentioned only in
     /// prose are skipped. Recognized Dependabot upgrade shortcodes match the same emoji.
     /// Headings use the vocabulary’s canonical spelling. A valid search with no matches
     /// prints nothing and succeeds. An unknown emoji or invalid revision exits nonzero.
@@ -356,8 +362,16 @@ fn run(cli: Cli) -> Result<ExitCode> {
         println!("{}", pinned_release(cli.config.as_deref())?);
         return Ok(ExitCode::SUCCESS);
     }
-    if let Action::Signature { harness } = cli.command {
-        println!("{}", signature::render(harness)?);
+    if let Action::Signature {
+        harness,
+        review,
+        addresses,
+    } = cli.command
+    {
+        println!(
+            "{}",
+            signature::render(harness, review.as_deref(), &addresses)?
+        );
         return Ok(ExitCode::SUCCESS);
     }
     if let Action::PrTitle(args) = cli.command {
@@ -608,6 +622,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 } else {
                     ExitCode::FAILURE
                 });
+            }
+            if matches!(text.trim(), "👌" | ":ok_hand:")
+                && let Some(review) = guide::topic(&vocab, "review")
+            {
+                print!("{review}");
+                return Ok(ExitCode::SUCCESS);
             }
             match vocab.tokens(text.trim()) {
                 Ok(tokens) => {
