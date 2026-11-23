@@ -1,36 +1,26 @@
 # Gitmoji Triangle
 
-A commit titled “Add permit appeals” tells you what shipped. Six months later,
-can you find the commit that set the appeal deadline? When coding agents produce
-more changes than a person can read line by line, that distinction matters.
-
-Gitmoji asks the author to name one decision per commit. The first emoji shows
-the area, the second shows what changed, and the issue number keeps the story
-together. A reviewer looking for a policy change can scan for 👔 and open that diff.
+Gitmoji helps people and coding agents record one decision per commit. When agents
+land changes faster than people can read every diff, the emoji
+pair shows the area and intent of each change. The issue number keeps related
+decisions together across pull requests.
 
 ## One issue, several decisions
 
-| A typical unit-of-work commit | The same work as an issue history, oldest first |
-| --- | --- |
-| Add permit appeals | `🧩👔 #412 (appeals): allow appeals for 30 days`<br>`🧩🛡️ #412 (appeals): reject appeals without a refusal reference`<br>`🎨✨ #412 (portal): let applicants appeal from the refusal notice` |
-| Polish the appeal form | `🎨📐 #413 (portal): keep the deadline beside the submit button`<br>`🎨💬 #413 (portal): say when the appeal window closes` |
-| Fix inconsistent appeal deadlines | `🧩🪢 #418 (appeals): reuse the filing calendar for reminders`<br>``👌 <`🧩🐛`> #418 (appeals): accept filings on the final day`` |
+| Example issue #412 · Let applicants appeal a refused permit |
+| --- |
+| **Traditional commit**<br>`feat(appeals): let applicants appeal a refused permit (#412)` |
+| **Gitmoji PR #417** · [`🧩` / `👔🛡️`] Set the filing rules for appeals |
+| `🧩👔 #412 (appeals): allow filing within 30 days of refusal` |
+| `🧩🛡️ #412 (appeals): require a refusal reference` |
+| **Gitmoji PR #423** · [`🎨` / `✨💬🐛`] Let applicants appeal from the portal |
+| `🎨✨ #412 (portal): open an appeal from the refusal notice` |
+| `🎨💬 #412 (portal): explain which documents to attach` |
+| ``👌 <`🎨🐛`> #412 (portal): keep the form open on the final day`` |
 
-In the last row, 🪢 marks the removal of duplicate logic. The 👌 commit came
-from review. Its optional discussion link takes the next reader to the finding.
-
-```mermaid
-flowchart TD
-    issue["One issue: change the appeal deadline"] --> why{"Why am I changing these lines?"}
-    why --> rule["👔 Extend the filing window to 45 days"]
-    why --> words["💬 Explain the deadline in plain language"]
-    rule --> pr["Two commits in one pull request"]
-    words --> pr
-```
-
-The rule and its boundary tests belong in one commit. Rewording the notice has
-its own intent. Both commits can go through the same review round. If feedback
-changes the rule, a later 👌 commit records what changed and why.
+Before writing the first PR, an agent can ask “How long can someone appeal?”
+and “What must they supply?” Months later, a human scanning the same issue
+can jump to 👔 for the deadline, 🛡️ for the guard, or 👌 for the fix prompted by review.
 
 ## Install
 
