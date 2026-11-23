@@ -21,14 +21,16 @@ from review. Its optional discussion link takes the next reader to the finding.
 
 ```mermaid
 flowchart TD
-    work["Work staged for one issue"] --> decision{"Could a reviewer accept one part and defer another?"}
-    decision -->|Yes| split["Give each decision its own commit"]
-    decision -->|No| together["Keep the change and its tests together"]
-    split --> history["Follow the issue to read the decisions in order"]
-    together --> history
+    issue["One issue: change the appeal deadline"] --> why{"Why am I changing these lines?"}
+    why --> rule["👔 Extend the filing window to 45 days"]
+    why --> words["💬 Explain the deadline in plain language"]
+    rule --> pr["Two commits in one pull request"]
+    words --> pr
 ```
 
-The agent skill uses this question when planning work. The CLI checks the commit subject and explains each emoji.
+The rule and its boundary tests belong in one commit. Rewording the notice has
+its own intent. Both commits can go through the same review round. If feedback
+changes the rule, a later 👌 commit records what changed and why.
 
 ## Install
 
