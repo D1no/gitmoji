@@ -2,7 +2,7 @@
 
 use crate::config::{Config, Level, SignatureRule};
 use crate::subject::{self, Subject, Ticket};
-use crate::trailers::{VERSION_MARK, records, trailer};
+use crate::trailers::{REVIEW_THREAD_ERROR, VERSION_MARK, records, trailer, valid_review_thread};
 use crate::vocabulary::{Vocabulary, normalize};
 
 /// What a check found.
@@ -194,12 +194,13 @@ fn names_a_version(subject: &str) -> bool {
         })
 }
 
-/// Trailers that say who was involved are not a reason for a change.
-fn names_people(key: &str) -> bool {
+/// Attribution and provenance identify the source without explaining the change.
+fn metadata_only(key: &str) -> bool {
     [
         "signed-off-by",
         "co-authored-by",
         "reviewed-by",
+        "review-thread",
         "acked-by",
         "tested-by",
         "reported-by",
@@ -454,6 +455,9 @@ fn check_with_source(
         }) => {
             let (_, second) = tags.second;
             let mut reading = String::new();
+            if subject_line.trim().starts_with(subject::REVIEW_RESPONSE) {
+                reading.push_str("Review response: ");
+            }
             if let Some(area) = tags.area {
                 reading.push_str(&area.name);
                 reading.push_str(": ");
@@ -521,9 +525,15 @@ fn check_with_source(
     // They end the message, after the block that closes the body, where git and its
     // hosts look for them. Some authors put them before that block instead.
     let last = records(&tail, |_| false);
-    let reason_after = last.iter().any(|record| !names_people(&record.key));
+    let reason_after = last.iter().any(|record| !metadata_only(&record.key));
     let mut trailers = records(body, is_closing);
     trailers.extend(last);
+    if trailers.iter().any(|record| {
+        record.key == "review-thread"
+            && (record.lines.len() != 1 || !valid_review_thread(&record.value))
+    }) {
+        report.errors.push(REVIEW_THREAD_ERROR.to_owned());
+    }
     // A co-author is looked for in those, and on any single line that reads as one, so
     // that a credit git would not parse is refused all the same.
     // Each credit is kept with its value in lower case, so that one credit found both
@@ -592,17 +602,17 @@ fn check_with_source(
     // Only the trailers before the closing block sit among the lines counted here.
     let before: Vec<_> = records(body, is_closing)
         .into_iter()
-        .filter(|record| names_people(&record.key))
+        .filter(|record| metadata_only(&record.key))
         .collect();
-    let about_people: Vec<usize> = before
+    let metadata: Vec<usize> = before
         .iter()
         .flat_map(|record| record.lines.iter().copied())
         .collect();
     let said = content
         .iter()
         .any(|(index, line)| {
-            !about_people.contains(index)
-                && !trailer(line).is_some_and(|(key, _)| names_people(&key))
+            !metadata.contains(index)
+                && !trailer(line).is_some_and(|(key, _)| metadata_only(&key))
                 // A version line left over above the closing block is not a reason.
                 && version_line(line).is_none()
         })
@@ -824,6 +834,37 @@ mod tests {
         let person =
             "🧩👔 #1 (server): x\n\nWhy.\n\nCo-authored-by: Example Person <person@cursor.com>\n";
         assert!(check_with("", person, None).passed());
+    }
+
+    #[test]
+    fn review_provenance_never_replaces_the_authors_reason() {
+        let subject = "👌 <`🧩🐛`> #1 (feed): retain the selected item";
+        let why = "The previous choice disappeared when sorting changed.";
+        let links = "Review-Thread: https://code.example.com/pull/3#discussion_r4\nReview-Thread: https://work.ghe.com/a/b/issues/6";
+        let human = "[rules]\ndescription = 'error'\nsignature = 'off'";
+        let agent = "[rules]\ndescription = 'error'\nsignature = 'error'";
+        let signature = "_\nexample (high)\nCodex";
+        assert!(check_with(human, &format!("{subject}\n\n{why}"), None).passed());
+        for (rules, body) in [
+            (human, format!("{why}\n\n{links}")),
+            (agent, format!("{why}\n\n{signature}\n\n{links}")),
+            (agent, format!("{why}\n\n{links}\n\n{signature}")),
+        ] {
+            let report = check_with(rules, &format!("{subject}\n\n{body}"), None);
+            assert!(report.passed(), "{report:?}");
+            assert!(report.reading.unwrap().starts_with("Review response: "));
+        }
+        assert!(!check_with(human, &format!("{subject}\n\n{links}"), None).passed());
+        assert!(!check_with(agent, &format!("{subject}\n\n{links}\n\n{signature}"), None).passed());
+        let original = format!(
+            "🧩🐛 #1 (feed): retain the selected item\n\n{why}\n\nExisting-Trailer: free text"
+        );
+        let report = check_with(human, &original, None);
+        assert!(report.passed() && !report.reading.unwrap().starts_with("Review response: "));
+        for bad in ["not-a-url", "https://github.com/example\n continuation", ""] {
+            let msg = format!("{subject}\n\n{why}\n\nReview-Thread: {bad}");
+            assert_eq!(check_with(human, &msg, None).errors, [REVIEW_THREAD_ERROR]);
+        }
     }
 
     #[test]

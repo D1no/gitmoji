@@ -4,9 +4,10 @@ mod antigravity;
 mod claude;
 mod codex;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use chrono::DateTime;
 use clap::ValueEnum;
+use gitmoji_triangle::trailers::{REVIEW_THREAD_ERROR, valid_review_thread};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,7 +26,7 @@ pub(crate) enum Harness {
 }
 
 impl Harness {
-    fn detected() -> Result<Self> {
+    fn detected() -> Result<Option<Self>> {
         let mut present = Vec::new();
         if env("CLAUDECODE") == "1"
             || !env("CLAUDE_CODE_ENTRYPOINT").is_empty()
@@ -40,10 +41,8 @@ impl Harness {
             present.push(Self::Antigravity);
         }
         match present.as_slice() {
-            [one] => Ok(*one),
-            [] => bail!(
-                "no agent session detected; select --harness claude-code, codex or antigravity"
-            ),
+            [one] => Ok(Some(*one)),
+            [] => Ok(None),
             _ => bail!(
                 "several agent sessions detected; select --harness claude-code, codex or antigravity"
             ),
@@ -51,17 +50,33 @@ impl Harness {
     }
 }
 
-pub(crate) fn render(harness: Option<Harness>) -> Result<String> {
+pub(crate) fn render(harness: Option<Harness>, review_threads: &[String]) -> Result<String> {
+    ensure!(
+        review_threads.iter().all(|url| valid_review_thread(url)),
+        REVIEW_THREAD_ERROR
+    );
     let harness = match harness {
-        Some(harness) => harness,
+        Some(chosen) => Some(chosen),
         None => Harness::detected()?,
     };
-    let sig = match harness {
-        Harness::ClaudeCode => claude::read(),
-        Harness::Codex => codex::read(),
-        Harness::Antigravity => antigravity::read(),
+    let mut lines = match harness {
+        Some(Harness::ClaudeCode) => claude::read().lines(),
+        Some(Harness::Codex) => codex::read().lines(),
+        Some(Harness::Antigravity) => antigravity::read().lines(),
+        None if !review_threads.is_empty() => Vec::new(),
+        None => {
+            bail!("no agent session detected; select --harness claude-code, codex or antigravity")
+        }
     };
-    Ok(sig.lines().join("\n"))
+    if !lines.is_empty() && !review_threads.is_empty() {
+        lines.push(String::new());
+    }
+    lines.extend(
+        review_threads
+            .iter()
+            .map(|url| format!("Review-Thread: {url}")),
+    );
+    Ok(lines.join("\n"))
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]

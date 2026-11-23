@@ -15,6 +15,31 @@ pub fn trailer(line: &str) -> Option<(String, &str)> {
     well_formed.then(|| (name.to_lowercase(), value.trim()))
 }
 
+/// A review permalink identifies where the feedback came from. Accept HTTPS hosts
+/// independent of the forge; validating the link must also work offline.
+pub fn valid_review_thread(value: &str) -> bool {
+    if value
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '\\' | '<' | '>' | '"'))
+    {
+        return false;
+    }
+    let Ok(uri) = value.parse::<ureq::http::Uri>() else {
+        return false;
+    };
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    let host = authority.host();
+    uri.scheme_str() == Some("https")
+        && !host.is_empty()
+        && !authority.as_str().contains('@')
+        && (authority.as_str() == host || authority.port_u16().is_some())
+}
+
+/// Diagnostic shared by signature generation and the message checker.
+pub const REVIEW_THREAD_ERROR: &str = "Review-Thread needs one absolute HTTPS URL per line. Repeat the trailer for additional links, or omit it for verbal feedback.";
+
 /// The sign that opens the closing block of a stored message, before the version of
 /// the vocabulary the message was checked against: `△ `2.0.0``. The hook writes that
 /// line. It is a plain triangle, not the 🔺 emoji, so that a search finds only it.
@@ -102,6 +127,30 @@ mod tests {
         records(&lines, |paragraph| {
             paragraph.first().is_some_and(|line| line.trim() == "_")
         })
+    }
+
+    #[test]
+    fn review_links_accept_https_forges_without_fetching_the_source() {
+        for url in [
+            "https://github.com/sample/project/pull/17#discussion_r42",
+            "https://review.ghe.com:8443/sample/project/pull/17/files#diff-abc",
+            "https://github.com/sample/project/discussions/3#discussioncomment-12",
+            "https://code.example/changes/13?view=review#comments",
+        ] {
+            assert!(valid_review_thread(url), "{url}");
+        }
+        for invalid in [
+            "https://",
+            "https:///a/path",
+            "http://code.example/42",
+            "#42",
+            "https://a:bad/p",
+            "https://name:password@code.example/review",
+            "https://host/x y",
+            "https://host/review#one\nReview-Thread: https://host/other",
+        ] {
+            assert!(!valid_review_thread(invalid), "{invalid}");
+        }
     }
 
     #[test]

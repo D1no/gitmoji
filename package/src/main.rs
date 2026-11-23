@@ -75,6 +75,9 @@ enum Action {
         /// Select a harness explicitly when session discovery is ambiguous.
         #[arg(long, value_enum)]
         harness: Option<signature::Harness>,
+        /// Append an HTTPS review permalink as a Git trailer. Repeat for additional links.
+        #[arg(long = "review-thread", value_name = "URL")]
+        review_threads: Vec<String>,
     },
     /// Synchronize a GitHub pull request title from its incoming commits.
     PrTitle(hosting::TitleArgs),
@@ -356,8 +359,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
         println!("{}", pinned_release(cli.config.as_deref())?);
         return Ok(ExitCode::SUCCESS);
     }
-    if let Action::Signature { harness } = cli.command {
-        println!("{}", signature::render(harness)?);
+    if let Action::Signature {
+        harness,
+        review_threads,
+    } = cli.command
+    {
+        println!("{}", signature::render(harness, &review_threads)?);
         return Ok(ExitCode::SUCCESS);
     }
     if let Action::PrTitle(args) = cli.command {
