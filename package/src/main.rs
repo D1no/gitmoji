@@ -75,9 +75,12 @@ enum Action {
         /// Select a harness explicitly when session discovery is ambiguous.
         #[arg(long, value_enum)]
         harness: Option<signature::Harness>,
-        /// First give the author’s specific reply, or the finding if unanswered. Repeat for related comments.
-        #[arg(long = "review-thread", value_name = "URL")]
-        review_threads: Vec<String>,
+        /// Link the reviewer’s original actionable request or specific comment.
+        #[arg(long, value_name = "URL")]
+        review: Option<String>,
+        /// Link a concrete finding in the primary review. Repeat for additional findings.
+        #[arg(long, requires = "review", value_name = "URL")]
+        addresses: Vec<String>,
     },
     /// Synchronize a GitHub pull request title from its incoming commits.
     PrTitle(hosting::TitleArgs),
@@ -361,10 +364,14 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
     if let Action::Signature {
         harness,
-        review_threads,
+        review,
+        addresses,
     } = cli.command
     {
-        println!("{}", signature::render(harness, &review_threads)?);
+        println!(
+            "{}",
+            signature::render(harness, review.as_deref(), &addresses)?
+        );
         return Ok(ExitCode::SUCCESS);
     }
     if let Action::PrTitle(args) = cli.command {

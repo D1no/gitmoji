@@ -2,7 +2,7 @@
 
 use crate::config::{Config, Level, SignatureRule};
 use crate::subject::{self, Subject, Ticket};
-use crate::trailers::{REVIEW_THREAD_ERROR, VERSION_MARK, records, trailer, valid_review_thread};
+use crate::trailers::{VERSION_MARK, check_review_links, records, trailer};
 use crate::vocabulary::{Vocabulary, normalize};
 
 /// What a check found.
@@ -195,12 +195,11 @@ fn names_a_version(subject: &str) -> bool {
 }
 
 /// Attribution and provenance identify the source without explaining the change.
-fn metadata_only(key: &str) -> bool {
+fn names_people(key: &str) -> bool {
     [
         "signed-off-by",
         "co-authored-by",
         "reviewed-by",
-        "review-thread",
         "acked-by",
         "tested-by",
         "reported-by",
@@ -414,6 +413,8 @@ fn check_with_source(
     }
     let parsed = subject::parse(vocab, config, subject_line);
     let is_marker = matches!(parsed, Ok(Subject::Marker(_)));
+    let review_response = matches!(parsed, Ok(Subject::Tagged { .. }))
+        && subject_line.trim().starts_with(subject::REVIEW_RESPONSE);
     let length = subject_line.trim().chars().count();
     if length > config.subject_max {
         let text = format!(
@@ -455,7 +456,7 @@ fn check_with_source(
         }) => {
             let (_, second) = tags.second;
             let mut reading = String::new();
-            if subject_line.trim().starts_with(subject::REVIEW_RESPONSE) {
+            if review_response {
                 reading.push_str("Review response: ");
             }
             if let Some(area) = tags.area {
@@ -524,15 +525,14 @@ fn check_with_source(
     // The trailers as git reads them: one record per trailer, however it was folded.
     // They end the message, after the block that closes the body, where git and its
     // hosts look for them. Some authors put them before that block instead.
+    let metadata_only =
+        |key: &str| names_people(key) || (review_response && matches!(key, "review" | "addresses"));
     let last = records(&tail, |_| false);
     let reason_after = last.iter().any(|record| !metadata_only(&record.key));
     let mut trailers = records(body, is_closing);
     trailers.extend(last);
-    if trailers.iter().any(|record| {
-        record.key == "review-thread"
-            && (record.lines.len() != 1 || !valid_review_thread(&record.value))
-    }) {
-        report.errors.push(REVIEW_THREAD_ERROR.to_owned());
+    if review_response && let Err(problem) = check_review_links(&trailers) {
+        report.errors.push(problem.to_owned());
     }
     // A co-author is looked for in those, and on any single line that reads as one, so
     // that a credit git would not parse is refused all the same.
@@ -837,15 +837,18 @@ mod tests {
     }
 
     #[test]
-    fn review_provenance_never_replaces_the_authors_reason() {
+    fn a_review_response_can_cite_a_conversation_and_its_individual_findings() {
         let subject = "👌 <`🧩🐛`> #1 (feed): retain the selected item";
-        let why = "The previous choice disappeared when sorting changed.";
-        let links = "Review-Thread: https://code.example.com/pull/3#discussion_r4\nReview-Thread: https://work.ghe.com/a/b/issues/6";
+        let why = "The review traced the loss to sorting.";
+        let review = "Review: https://code.example.com/pull/3#discussion_r4";
+        let addresses = "Addresses: [https://work.ghe.com/a/b/issues/6#issuecomment-3]";
+        let links = format!("{review}\n{addresses}");
         let human = "[rules]\ndescription = 'error'\nsignature = 'off'";
         let agent = "[rules]\ndescription = 'error'\nsignature = 'error'";
         let signature = "_\nexample (high)\nCodex";
-        assert!(check_with(human, &format!("{subject}\n\n{why}"), None).passed());
         for (rules, body) in [
+            (human, why.to_string()),
+            (human, format!("{why}\n\n{review}")),
             (human, format!("{why}\n\n{links}")),
             (agent, format!("{why}\n\n{signature}\n\n{links}")),
             (agent, format!("{why}\n\n{links}\n\n{signature}")),
@@ -856,15 +859,33 @@ mod tests {
         }
         assert!(!check_with(human, &format!("{subject}\n\n{links}"), None).passed());
         assert!(!check_with(agent, &format!("{subject}\n\n{links}\n\n{signature}"), None).passed());
-        let original = format!(
-            "🧩🐛 #1 (feed): retain the selected item\n\n{why}\n\nExisting-Trailer: free text"
-        );
-        let report = check_with(human, &original, None);
-        assert!(report.passed() && !report.reading.unwrap().starts_with("Review response: "));
-        for bad in ["not-a-url", "https://github.com/example\n continuation", ""] {
-            let msg = format!("{subject}\n\n{why}\n\nReview-Thread: {bad}");
-            assert_eq!(check_with(human, &msg, None).errors, [REVIEW_THREAD_ERROR]);
+        for (tail, expected) in [
+            (format!("{review}\n{review}"), "at most one Review:"),
+            (addresses.to_owned(), "requires a primary Review:"),
+            (
+                format!("{review}\n{addresses}\n{addresses}"),
+                "at most one Addresses:",
+            ),
+            (
+                format!("{review}\nAddresses: #42"),
+                "Addresses: needs one bracketed list",
+            ),
+            ("Review:".to_owned(), "Review: needs"),
+            (
+                "Review: https://host/review\n continuation".to_owned(),
+                "Review: needs",
+            ),
+        ] {
+            let report = check_with(human, &format!("{subject}\n\n{why}\n\n{tail}"), None);
+            assert!(
+                report.errors.iter().any(|e| e.contains(expected)),
+                "{tail}: {report:?}"
+            );
         }
+        // Existing project-defined trailer semantics on ordinary subjects survive migration.
+        let old = "🧩🐛 #1 (feed): retain the selected item\n\nReview: maintainer sign-off\nReview: QA sign-off\nAddresses: UX-12";
+        let report = check_with(human, old, None);
+        assert!(report.passed() && !report.reading.unwrap().starts_with("Review response: "));
     }
 
     #[test]

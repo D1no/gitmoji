@@ -7,7 +7,9 @@ mod codex;
 use anyhow::{Result, bail, ensure};
 use chrono::DateTime;
 use clap::ValueEnum;
-use gitmoji_triangle::trailers::{REVIEW_THREAD_ERROR, valid_review_thread};
+use gitmoji_triangle::trailers::{
+    ADDRESSES_LINK_ERROR, REVIEW_LINK_ERROR, valid_review_address, valid_review_link,
+};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -50,10 +52,15 @@ impl Harness {
     }
 }
 
-pub(crate) fn render(harness: Option<Harness>, review_threads: &[String]) -> Result<String> {
+pub(crate) fn render(
+    harness: Option<Harness>,
+    review: Option<&str>,
+    addresses: &[String],
+) -> Result<String> {
+    ensure!(review.is_none_or(valid_review_link), REVIEW_LINK_ERROR);
     ensure!(
-        review_threads.iter().all(|url| valid_review_thread(url)),
-        REVIEW_THREAD_ERROR
+        addresses.iter().all(|url| valid_review_address(url)),
+        ADDRESSES_LINK_ERROR
     );
     let harness = match harness {
         Some(chosen) => Some(chosen),
@@ -63,19 +70,20 @@ pub(crate) fn render(harness: Option<Harness>, review_threads: &[String]) -> Res
         Some(Harness::ClaudeCode) => claude::read().lines(),
         Some(Harness::Codex) => codex::read().lines(),
         Some(Harness::Antigravity) => antigravity::read().lines(),
-        None if !review_threads.is_empty() => Vec::new(),
+        None if review.is_some() => Vec::new(),
         None => {
             bail!("no agent session detected; select --harness claude-code, codex or antigravity")
         }
     };
-    if !lines.is_empty() && !review_threads.is_empty() {
-        lines.push(String::new());
+    if let Some(url) = review {
+        if !lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines.push(format!("Review: {url}"));
+        if !addresses.is_empty() {
+            lines.push(format!("Addresses: [{}]", addresses.join(", ")));
+        }
     }
-    lines.extend(
-        review_threads
-            .iter()
-            .map(|url| format!("Review-Thread: {url}")),
-    );
     Ok(lines.join("\n"))
 }
 

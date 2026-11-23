@@ -138,15 +138,20 @@ const BEFORE: &str = "2019-12-31T23:00:00Z";
 const NOW: &str = "2020-01-01T00:00:01.123Z";
 
 #[test]
-fn repeated_review_links_are_git_trailers_for_humans_and_agents() {
+fn primary_review_and_ordered_findings_are_git_trailers_for_humans_and_agents() {
     let f = Fixture::new();
     let refs = [
-        "--review-thread",
+        "--review",
         "https://work.ghe.com/team/app/pull/4#discussion_r7",
-        "--review-thread",
-        "https://code.example/review/42",
+        "--addresses",
+        "https://work.ghe.com/team/app/pull/4#discussion_r6",
+        "--addresses",
+        "https://[2001:db8::9]/review/a,b#issuecomment-42",
     ];
-    let trailers = format!("Review-Thread: {}\nReview-Thread: {}\n", refs[1], refs[3]);
+    let trailers = format!(
+        "Review: {}\nAddresses: [{}, {}]\n",
+        refs[1], refs[3], refs[5]
+    );
     assert_eq!(f.text(&refs, &[]), trailers);
     let signature = f.text(&refs, &[("CODEX_THREAD_ID", "thread-one")]);
     assert!(signature.starts_with("_\n") && signature.ends_with(&format!("\n\n{trailers}")));
@@ -169,7 +174,24 @@ fn repeated_review_links_are_git_trailers_for_humans_and_agents() {
             .replace("\r\n", "\n"),
         trailers
     );
-    let bad = f.run(&["--review-thread", "#42"], &[]);
+    for rejected in [
+        vec!["--addresses", refs[3]],
+        vec!["--review", refs[1], "--review", refs[3]],
+        vec!["--review", refs[1], "--addresses", "#42"],
+        vec![
+            "--review",
+            refs[1],
+            "--addresses",
+            "https://code.example/a,https://review.example/b",
+        ],
+    ] {
+        let bad = f.run(&rejected, &[]);
+        assert!(
+            !bad.status.success() && bad.stdout.is_empty(),
+            "{rejected:?}"
+        );
+    }
+    let bad = f.run(&["--review", "#42"], &[]);
     assert!(!bad.status.success() && bad.stdout.is_empty());
     assert!(
         String::from_utf8(bad.stderr)
