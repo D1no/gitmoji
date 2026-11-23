@@ -82,6 +82,8 @@ enum Action {
     ProvisionalPr(hosting::ProvisionalArgs),
     /// Preview or submit a verified direct merge on GitHub.
     GithubMerge(hosting::MergeArgs),
+    /// Preview unresolved review threads, or transfer selected findings to their verified follow-up.
+    DeferFindings(hosting::FindingsArgs),
     /// Check a commit message. As a commit-msg hook: `gitmoji check --fix {1}`.
     Check {
         /// The file git wrote the message to.
@@ -362,6 +364,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
         hosting::sync_title(args)?;
         return Ok(ExitCode::SUCCESS);
     }
+    if let Action::DeferFindings(args) = cli.command {
+        hosting::defer_findings(args)?;
+        return Ok(ExitCode::SUCCESS);
+    }
     if let Action::ProvisionalPr(args) = cli.command {
         return hosting::provisional_pr(args);
     }
@@ -636,6 +642,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         | Action::PrTitle(_)
         | Action::ProvisionalPr(_)
         | Action::GithubMerge(_)
+        | Action::DeferFindings(_)
         | Action::Init { .. }
         | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
         Action::History {

@@ -1,4 +1,6 @@
 //! GitHub PR operations on the caller's host and repository.
+mod findings;
+pub(crate) use findings::{FindingsArgs, defer_findings};
 mod merge;
 mod merge_reason;
 mod provisional;
