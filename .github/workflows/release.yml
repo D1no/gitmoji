@@ -1,5 +1,5 @@
 # Publish the five platform binaries, standalone installer, checksums, and
-# changelog entry for a version tag. See .github/README.md.
+# changelog entry for a version tag. See .github/ci-and-releases.md.
 name: Release
 
 on:

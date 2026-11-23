@@ -104,7 +104,7 @@ When a review prompts a commit, 👌 marks the response and the enclosed emojis 
 | [Skill](skills/README.md) | Install the agent skill |
 | [Development](docs/development.md) | Contributor setup and worktrees |
 | [Website](website/README.md) | Run the landing page |
-| [CI and releases](.github/README.md) | Run checks and publish a release |
+| [CI and releases](.github/ci-and-releases.md) | Run checks and publish a release |
 
 Contributors can find repository-specific guidance in [AGENTS.md](AGENTS.md).
 See the [changelog](CHANGELOG.md) for release notes and the [MIT license](LICENSE)

@@ -9,7 +9,7 @@ Start with the guide for the part of the project you are changing.
 | Agent skill and integrations | [Skills](skills/README.md) |
 | Website | [Landing page](website/README.md) |
 | Contributor setup and worktrees | [Development](docs/development.md) |
-| Checks and publication | [CI and releases](.github/README.md) |
+| Checks and publication | [CI and releases](.github/ci-and-releases.md) |
 
 ## Commits
 
@@ -24,4 +24,4 @@ Start with the guide for the part of the project you are changing.
   outside tracked files. Put durable contributor guidance in the relevant guide.
 - Update links, examples and instructions alongside the changes they describe.
 - Land changes on `trunk`. The maintainer publishes tested versions and verifies
-  a fresh installation. [Release steps](.github/README.md#releases-workflowsreleaseyml)
+  a fresh installation. [Release steps](.github/ci-and-releases.md#releases-workflowsreleaseyml)

@@ -1,5 +1,5 @@
 # Runs on every push and pull request. Each job runs the commands a contributor runs
-# locally; see .github/README.md for what each job does and does not prove.
+# locally; see .github/ci-and-releases.md for what each job does and does not prove.
 name: CI
 
 on:
