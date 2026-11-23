@@ -68,6 +68,8 @@ A job without a ticket puts an em dash in the ticket position.
 
 ## Vocabulary by lane
 
+Start with **one Area** from the left column. Then choose **one Behavior** from the middle column or **one Intent** from the right. For example, 🧩👔 pairs Capability with Business rule, and 🧩♻️ pairs Capability with Refactor.
+
 <table>
 <thead><tr><th>Area</th><th>Behavior</th><th>Intent</th></tr></thead>
 <tbody><tr>

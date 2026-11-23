@@ -64,7 +64,10 @@ fn render() -> Result<String> {
         page.push_str(section.trim_end());
         page.push_str("\n\n");
     }
-    page.push_str("## Vocabulary by lane\n\n");
+    page.push_str(
+        "## Vocabulary by lane\n\n\
+         Start with **one Area** from the left column. Then choose **one Behavior** from the middle column or **one Intent** from the right. For example, 🧩👔 pairs Capability with Business rule, and 🧩♻️ pairs Capability with Refactor.\n\n",
+    );
     page.push_str(&reference::render(&vocab));
     page.push('\n');
     // The standalone installation guide lives next to README.md, so relative links work in both.
