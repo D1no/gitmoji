@@ -2,6 +2,13 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.22.0 (23 November 2026)
+
+- Mark an authored review response with a heading such as ``👌 <`🧩🐛`> #42 (checkout): reserve the last item once``. The issue, scope, reason and signature follow the project’s usual rules. The hook understands `:ok_hand:` while typing. The stored prefix is 👌.
+- For written feedback, add one `Review:` permalink to the reviewer’s existing request and one optional `Addresses: [URL, URL]` list of the exact findings. The signature command accepts `--review URL` and repeated `--addresses URL` flags. Verbal feedback can use just the ordinary reason and signature. After pushing, verify the fixing commit is reachable from the remote PR branch, then reply to the reviewer with its SHA.
+- Search authored responses with `gitmoji log '👌'`. PR and local merge captions, release notes, provisional checks and history cleanup recognize the enclosed decision. [Authoring guide and examples](https://github.com/D1no/gitmoji/blob/v0.22.0/skills/gitmoji/SKILL.md#respond-to-review-feedback)
+- To adopt, set `[vocabulary].version` to `"0.22.0"`, run the pinned installer, then run `gitmoji init` and `gitmoji doctor`. A project on 0.20.2 can upgrade directly. To enroll in the optional provisional-PR workflow at the same time, use `gitmoji init --github-workflows --provisional-workflow`. Land the updated workflow pins before using the new subject form on incoming PRs.
+
 ## 0.21.0 (23 November 2026)
 
 - Pull request titles and landing captions display 🚧 for provisional work and 🧪 for exploration before the emoji inventory. The corresponding commits determine the type. `merge-caption --json` includes their modifiers and tickets.
