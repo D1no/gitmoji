@@ -1,18 +1,34 @@
 # Gitmoji Triangle
 
-Gitmoji Triangle helps people and coding agents decide when to commit. Each
-commit records one decision. The emojis describe its area and intent, the
-issue connects it to the work, and the scope names the part of the project it
-changes.
+A commit titled “Add permit appeals” tells you what shipped. Six months later,
+can you find the commit that set the appeal deadline? When coding agents produce
+more changes than a person can read line by line, that distinction matters.
 
-```
-🧩👔 #412 (server): allow an appeal within 30 days of refusal
-🧩🛡️ #412 (server): reject an appeal without a refusal reference
-🎨✨ #412 (app): let applicants appeal a refused permit
+Gitmoji asks the author to name one decision per commit. The first emoji shows
+the area, the second shows what changed, and the issue number keeps the story
+together. A reviewer looking for a policy change can scan for 👔 and open that diff.
+
+## One issue, several decisions
+
+| A typical unit-of-work commit | The same work as an issue history, oldest first |
+| --- | --- |
+| Add permit appeals | `🧩👔 #412 (appeals): allow appeals for 30 days`<br>`🧩🛡️ #412 (appeals): reject appeals without a refusal reference`<br>`🎨✨ #412 (portal): let applicants appeal from the refusal notice` |
+| Polish the appeal form | `🎨📐 #413 (portal): keep the deadline beside the submit button`<br>`🎨💬 #413 (portal): say when the appeal window closes` |
+| Fix inconsistent appeal deadlines | `🧩🪢 #418 (appeals): reuse the filing calendar for reminders`<br>``👌 <`🧩🐛`> #418 (appeals): accept filings on the final day`` |
+
+In the last row, 🪢 marks the removal of duplicate logic. The 👌 commit came
+from review. Its optional discussion link takes the next reader to the finding.
+
+```mermaid
+flowchart TD
+    work["Work staged for one issue"] --> decision{"Could a reviewer accept one part and defer another?"}
+    decision -->|Yes| split["Give each decision its own commit"]
+    decision -->|No| together["Keep the change and its tests together"]
+    split --> history["Follow the issue to read the decisions in order"]
+    together --> history
 ```
 
-The CLI checks commit messages and explains the vocabulary. The accompanying
-skill helps agents plan and write commits using the same rules.
+The agent skill uses this question when planning work. The CLI checks the commit subject and explains each emoji.
 
 ## Install
 
