@@ -530,10 +530,27 @@ fn check_with_source(
     let last = records(&tail, |_| false);
     let reason_after = last.iter().any(|record| !metadata_only(&record.key));
     let mut trailers = records(body, is_closing);
-    trailers.extend(last);
-    if review_response && let Err(problem) = check_review_links(&trailers) {
-        report.errors.push(problem.to_owned());
+    if review_response {
+        // Git exposes only the final trailer paragraph. A review link just
+        // before the signature, or attached to it without a blank line, would
+        // disappear from git log's trailer fields even when the URL is valid.
+        let review_key = |key: &str| matches!(key, "review" | "addresses");
+        let in_signature = body
+            .rsplit(|line| line.trim().is_empty())
+            .find(|paragraph| !paragraph.is_empty() && !is_closing(paragraph))
+            .is_some_and(|paragraph| {
+                (paragraph[0] == "_" || version_line(paragraph[0]).is_some())
+                    && paragraph
+                        .iter()
+                        .any(|line| trailer(line).is_some_and(|(key, _)| review_key(&key)))
+            });
+        if in_signature || trailers.iter().any(|record| review_key(&record.key)) {
+            report.errors.push("Place Review: and Addresses: in the final Git trailer paragraph, separated from the signature or prose by a blank line.".to_owned());
+        } else if let Err(problem) = check_review_links(&last) {
+            report.errors.push(problem.to_owned());
+        }
     }
+    trailers.extend(last);
     // A co-author is looked for in those, and on any single line that reads as one, so
     // that a credit git would not parse is refused all the same.
     // Each credit is kept with its value in lower case, so that one credit found both
@@ -851,7 +868,6 @@ mod tests {
             (human, format!("{why}\n\n{review}")),
             (human, format!("{why}\n\n{links}")),
             (agent, format!("{why}\n\n{signature}\n\n{links}")),
-            (agent, format!("{why}\n\n{links}\n\n{signature}")),
         ] {
             let report = check_with(rules, &format!("{subject}\n\n{body}"), None);
             assert!(report.passed(), "{report:?}");
@@ -859,6 +875,26 @@ mod tests {
         }
         assert!(!check_with(human, &format!("{subject}\n\n{links}"), None).passed());
         assert!(!check_with(agent, &format!("{subject}\n\n{links}\n\n{signature}"), None).passed());
+        for signature in [signature, "△ `0.21.0`\nexample (high)\nCodex", "△ `0.21.0`"] {
+            for body in [
+                format!("{why}\n\n{links}\n\n{signature}"),
+                format!("{why}\n\n{signature}\n{links}"),
+                format!("{why}\n\n{signature}\n{links}\n\n△ `0.21.0`"),
+                format!("{why}\n\n{review}\n\n{signature}\n\n{addresses}"),
+            ] {
+                let report = check_with(human, &format!("{subject}\n\n{body}"), None);
+                assert!(
+                    report
+                        .errors
+                        .iter()
+                        .any(|e| e.contains("final Git trailer paragraph")),
+                    "{body}: {report:?}"
+                );
+            }
+        }
+        // A quoted example in the prose is not review metadata.
+        let example = format!("{subject}\n\n{why}\n\n```text\n{review}\n```\n\n{signature}");
+        assert!(check_with(agent, &example, None).passed());
         for (tail, expected) in [
             (format!("{review}\n{review}"), "at most one Review:"),
             (addresses.to_owned(), "requires a primary Review:"),
