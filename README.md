@@ -73,6 +73,8 @@ Push another commit and Gitmoji refreshes the emoji prefix. Reviewers can edit t
 
 A 🚧 provisional or 🧪 exploratory commit puts its marker before the title inventory. Projects can opt into a verified follow-up issue, defer selected review findings, and disclose unfinished work in release notes. [Provisional pull requests](skills/gitmoji/references/pull-requests.md#land-a-demo-or-comparison-with-a-follow-up)
 
+When a review prompts a commit, 👌 marks the response and the enclosed emojis identify the change. An optional `Review-Thread` trailer links back to the feedback. [Review-response commits](skills/gitmoji/SKILL.md#respond-to-review-feedback)
+
 ## Guides
 
 | Guide | What it covers |

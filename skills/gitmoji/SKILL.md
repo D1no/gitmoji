@@ -14,8 +14,29 @@ A subject looks like this:
 🎨💄 — (tokens): take the new hues from Figma
 ```
 
-The emojis are the first characters of the line, with nothing around them. The last
-example is a commit made by a job: it has no ticket, so it carries an em dash.
+An ordinary subject starts with its decision emojis. A job without a ticket uses an em dash.
+
+### Respond to review feedback
+
+When a colleague or an automated reviewer asks for a change, start the subject with 👌, a space, and the ordinary decision emojis inside **literal angle brackets and backticks**. Write the usual ticket, scope and summary after the group. For example, a colleague spots a race in checkout:
+
+```text
+👌 <`🧩🐛`> #42 (checkout): reserve the last item once
+
+Two requests could reserve the same item before either recorded the reservation.
+```
+
+That message works for spoken feedback. When feedback is written down, copy the most specific available permalink to a final Git trailer paragraph after the reason and any agent signature. A line comment, PR review, issue comment, or discussion can all supply it. For example:
+
+```text
+Review-Thread: https://github.com/OWNER/REPO/pull/17#discussion_r12345
+```
+
+An agent can generate its signature and trailer together with `gitmoji signature --review-thread URL`. Repeat the option when several findings led to the same decision. A human can add the trailer directly. The actual change still determines the inner tags, including any applicable third modifier. The PR inventory counts that decision once. To retrieve the links from a stored commit:
+
+```sh
+git show -s --format='%(trailers:key=Review-Thread,valueonly)' HEAD
+```
 
 The vocabulary is large on purpose, and you do not need to hold it in your head. The
 `gitmoji` command hands it out in small pieces. Read only the piece you need.
