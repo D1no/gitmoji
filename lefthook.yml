@@ -3,6 +3,8 @@
 
 pre-commit:
   commands:
+    readme:
+      run: python3 .github/scripts/stage-readme.py
     gitmoji-staged:
       # Says when the staged files look like more than one commit.
       run: gitmoji staged

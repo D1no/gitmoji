@@ -18,6 +18,24 @@ then uses the same hooks.
 For website work, use Node 24 or later and the pnpm version pinned in
 `website/package.json`. Run the workspace commands from `website/`. [Website setup](../website/README.md)
 
+## Repository README
+
+The root README is generated in full. Change the vocabulary in
+[`package/vocabulary.toml`](../package/vocabulary.toml), command descriptions in the CLI,
+installation instructions in [INSTALL.md](../INSTALL.md), or the
+[checked examples and page layout](../package/examples/readme/). The examples use the
+same subject checker and PR caption formatter as the released command.
+
+The repository’s pre-commit hook refreshes the page from staged changes. CI
+regenerates it independently and checks the committed bytes. If a path-limited
+commit needs a new README, stage the intended changes and commit without a path
+so Git includes the generated page. To preview a change
+from the repository root, run:
+
+```sh
+cargo run --quiet --locked --manifest-path package/Cargo.toml --example readme -- --write
+```
+
 ## Dev container
 
 The dev container sets up the Rust command and Git hooks. Open the folder in an

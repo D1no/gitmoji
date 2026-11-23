@@ -131,6 +131,9 @@ jobs:
         working-directory: package
         run: cargo build --locked
 
+      - name: Check the generated repository README
+        run: cargo run --quiet --locked --manifest-path package/Cargo.toml --example readme -- --check
+
       - name: Exercise the CLI and installer in disposable repositories
         run: |
           export PATH="$PWD/package/target/debug:$PATH"
