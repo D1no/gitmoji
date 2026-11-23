@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  GITMOJI_VERSION: '0.20.2'
+  GITMOJI_VERSION: '0.21.0'
 
 jobs:
   gitmoji-commits:

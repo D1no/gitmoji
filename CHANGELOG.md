@@ -2,6 +2,13 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.21.0 (23 November 2026)
+
+- Pull request titles and landing captions display 🚧 for provisional work and 🧪 for exploration before the emoji inventory. The corresponding commits determine the type. `merge-caption --json` includes their modifiers and tickets.
+- The opt-in provisional workflow verifies one open, labelled follow-up issue, maintains a link in the PR body, and can add a backlink. `provisional-pr --check --json` gives policy jobs a read-only check of the live PR. `defer-findings` lets maintainers transfer selected review threads to the issue before resolving them.
+- `gitmoji open [TIP|FROM..TO]` lists unfinished provisional or exploratory work. Release notes disclose open tickets at the release tip. Set `provisional = "refuse"` in the `[changelog]` table to require closure before release.
+- To upgrade, set `[vocabulary].version` to `"0.21.0"`, run the standalone installer with `--pinned`, and run `gitmoji init`. For follow-up checks and reviewer instructions also pass `--provisional-workflow`. Run `gitmoji doctor` and review the generated files. [Provisional PR guide](https://github.com/D1no/gitmoji/blob/v0.21.0/skills/gitmoji/references/pull-requests.md#land-a-demo-or-comparison-with-a-follow-up)
+
 ## 0.20.2 (22 November 2026)
 
 - After GitHub refuses a direct merge with HTTP 405, `gitmoji github-merge` shows the host's explanation when available and reads the PR once. It compares the current head and base with the reviewed ones and reports the current mergeability state. If checks are settling or the PR now looks ready, review a fresh preview before submitting another merge. Gitmoji never repeats the write automatically. [Handling a refused merge](skills/gitmoji/references/pull-requests.md)
