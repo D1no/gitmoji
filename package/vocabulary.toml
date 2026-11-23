@@ -12,10 +12,22 @@ marker_example = "🔖 release 1.6.0"
 subject = "👌 <`<area><behaviour or intent>[modifier]`> <ticket> (<scope>): <summary>"
 example = "👌 <`🧩🐛`> #42 (checkout): reserve the last item once"
 meaning = "This authored decision addresses feedback from a human or automated reviewer. The enclosed emojis describe what changed. The feedback can come from a conversation."
-optional_trailer = "Review-Thread"
-trailer_format = "HTTPS URL"
-repeatable = true
-link_order = "First link: the author’s most specific response addressing the change, or the reviewer’s exact finding when there is no reply. Subsequent links point to related comments that explain this decision."
+link_guidance = "Review holds one URL for the decision. Use the reviewer’s existing actionable request: the precise issue or inline comment, or the review summary when it contains the decision. After committing, reply there with the fixing SHA. Addresses lists the individual comments that this same change satisfies. For spoken feedback, the reason in the body is sufficient."
+
+[[format.review_response.trailers]]
+name = "Review"
+value_format = "https-url"
+required = false
+repeatable = false
+example = "Review: https://github.com/OWNER/REPO/pull/17#discussion_r12349"
+
+[[format.review_response.trailers]]
+name = "Addresses"
+value_format = "bracketed-comma-separated-https-url-list"
+required = false
+repeatable = false
+requires = "Review"
+example = "Addresses: [https://github.com/OWNER/REPO/pull/17#discussion_r12345, https://github.com/OWNER/REPO/issues/42#issuecomment-67890]"
 
 [[rules]]
 title = "Pair first"
@@ -79,7 +91,7 @@ text = "The author of a commit is the person responsible for it. An agent never 
 
 [[writing]]
 title = "Changes requested in review"
-text = "Explain the reason for the change in the body. If the feedback has a permalink, add a Review-Thread trailer to the final Git trailer paragraph after any signature. Put the author’s most concrete response first, or the precise finding if there is no reply. Add a separate trailer for each related comment. For verbal feedback, omit the trailer."
+text = "Explain the reason for the change in the body. For written feedback, put one Review URL in the final Git trailer paragraph after any signature. Link the reviewer’s most specific existing request. After committing, reply there with the fixing SHA. Put supporting comment permalinks in one optional Addresses list, inside brackets and separated by a comma and a space. For spoken feedback, omit both fields."
 
 [[writing]]
 title = "Emojis, not shortcodes"

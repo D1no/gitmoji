@@ -113,14 +113,28 @@ pub struct ReviewResponseFormat {
     pub example: String,
     /// When to use the wrapper.
     pub meaning: String,
-    /// Name of the optional Git trailer.
-    pub optional_trailer: String,
-    /// Expected trailer value.
-    pub trailer_format: String,
-    /// Whether one response can cite multiple discussions.
+    /// Selection of the main discussion and its specific findings.
+    pub link_guidance: String,
+    /// Typed fields in the final Git trailer paragraph, in presentation order.
+    pub trailers: Vec<ReviewTrailer>,
+}
+
+/// A Git trailer carrying evidence for a review-driven change.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ReviewTrailer {
+    /// Canonical Git trailer name.
+    pub name: String,
+    /// Wire format of the trailer value.
+    pub value_format: String,
+    /// Whether every review response needs this field.
+    pub required: bool,
+    /// Whether the trailer name can be repeated.
     pub repeatable: bool,
-    /// How to select the primary conversation and its supporting comments.
-    pub link_order: String,
+    /// Other field required when this trailer is present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<String>,
+    /// Complete trailer line.
+    pub example: String,
 }
 
 /// The shape of a subject, with examples.

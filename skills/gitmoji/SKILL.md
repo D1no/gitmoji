@@ -26,22 +26,21 @@ When a colleague or an automated reviewer asks for a change, start the subject w
 Two requests could reserve the same item before either recorded the reservation.
 ```
 
-A spoken review can use that message as written. If written feedback exists, put its permalinks in the final Git trailer paragraph after the reason and any agent signature. **The first `Review-Thread` is the primary conversation.** Prefer the author's most specific reply addressing this change. If the author has not replied, link directly to the reviewer's finding. In a long issue or discussion, copy the individual comment’s permalink. For inline feedback, copy the permalink to the reply or comment on the diff. A link to the whole review is appropriate when the request appears in its summary.
+A spoken review can use that message as written. When the feedback has a URL, put **one `Review:` permalink** in the final Git trailer paragraph after the reason and any agent signature. It points to the conversation explaining this one decision. Link to the reviewer’s existing request that prompted the change. A review summary or issue description works when it contains the request. In a long thread, copy the individual comment’s permalink.
 
-Repeat the trailer for each additional comment that explains the same decision. For example, a reviewer might identify a race in checkout and a second path that retries a reservation. The author's reply explains why both paths need the same protection. The first link below is that reply, the second is the inline finding, and the third is an issue comment explaining the retry:
+**`Addresses:` is one optional bracketed list.** Use it for the specific findings that led to the same change. Copy the comment permalink for inline feedback on a file. Put a comma and a space between URLs, in the order a reader should visit them. A single comment that explains the whole change can go in `Review:` alone. In this example the reviewer’s main comment explains why checkout and its retry handler require the same reservation decision. The list links the two findings:
 
 ```text
-Review-Thread: https://github.com/OWNER/REPO/pull/17#discussion_r12349
-Review-Thread: https://github.com/OWNER/REPO/pull/17#discussion_r12345
-Review-Thread: https://github.com/OWNER/REPO/issues/42#issuecomment-67890
+Review: https://github.com/OWNER/REPO/pull/17#discussion_r12349
+Addresses: [https://github.com/OWNER/REPO/pull/17#discussion_r12345, https://github.com/OWNER/REPO/issues/42#issuecomment-67890]
 ```
 
-Use `gitmoji signature --review-thread URL` to generate the signature and links. Repeat the option in reading order. A human can add the trailers directly. When the author replies after committing, the original finding supplies the commit's link and the reply can point back to the fixing SHA.
+Use `gitmoji signature --review URL` and repeat `--addresses URL` for each finding. Gitmoji writes one list. A human can enter the trailers directly. After committing, reply to the reviewer with the fixing SHA and invite them to verify the change.
 
-Explain in the body why the affected files belong to one decision. If the reviewer could accept one fix and defer the other, give each its own commit and relevant links. The PR inventory counts each inner decision once. To retrieve the links from a stored commit:
+Explain in the body why the affected files belong to one decision. If a reviewer could accept one fix and defer the other, give each its own commit and relevant links. The PR inventory counts each inner decision once. To retrieve the fields from a stored commit:
 
 ```sh
-git show -s --format='%(trailers:key=Review-Thread,valueonly)' HEAD
+git show -s --format='%(trailers:key=Review,key=Addresses)' HEAD
 ```
 
 The vocabulary is large on purpose, and you do not need to hold it in your head. The
