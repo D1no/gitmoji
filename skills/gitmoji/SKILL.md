@@ -26,13 +26,19 @@ When a colleague or an automated reviewer asks for a change, start the subject w
 Two requests could reserve the same item before either recorded the reservation.
 ```
 
-That message works for spoken feedback. When feedback is written down, copy the most specific available permalink to a final Git trailer paragraph after the reason and any agent signature. A line comment, PR review, issue comment, or discussion can all supply it. For example:
+A spoken review can use that message as written. If written feedback exists, put its permalinks in the final Git trailer paragraph after the reason and any agent signature. **The first `Review-Thread` is the primary conversation.** Prefer the author's most specific reply addressing this change. If the author has not replied, link directly to the reviewer's finding. In a long issue or discussion, copy the individual comment’s permalink. For inline feedback, copy the permalink to the reply or comment on the diff. A link to the whole review is appropriate when the request appears in its summary.
+
+Repeat the trailer for each additional comment that explains the same decision. For example, a reviewer might identify a race in checkout and a second path that retries a reservation. The author's reply explains why both paths need the same protection. The first link below is that reply, the second is the inline finding, and the third is an issue comment explaining the retry:
 
 ```text
+Review-Thread: https://github.com/OWNER/REPO/pull/17#discussion_r12349
 Review-Thread: https://github.com/OWNER/REPO/pull/17#discussion_r12345
+Review-Thread: https://github.com/OWNER/REPO/issues/42#issuecomment-67890
 ```
 
-An agent can generate its signature and trailer together with `gitmoji signature --review-thread URL`. Repeat the option when several findings led to the same decision. A human can add the trailer directly. The actual change still determines the inner tags, including any applicable third modifier. The PR inventory counts that decision once. To retrieve the links from a stored commit:
+Use `gitmoji signature --review-thread URL` to generate the signature and links. Repeat the option in reading order. A human can add the trailers directly. When the author replies after committing, the original finding supplies the commit's link and the reply can point back to the fixing SHA.
+
+Explain in the body why the affected files belong to one decision. If the reviewer could accept one fix and defer the other, give each its own commit and relevant links. The PR inventory counts each inner decision once. To retrieve the links from a stored commit:
 
 ```sh
 git show -s --format='%(trailers:key=Review-Thread,valueonly)' HEAD

@@ -119,6 +119,8 @@ pub struct ReviewResponseFormat {
     pub trailer_format: String,
     /// Whether one response can cite multiple discussions.
     pub repeatable: bool,
+    /// How to select the primary conversation and its supporting comments.
+    pub link_order: String,
 }
 
 /// The shape of a subject, with examples.

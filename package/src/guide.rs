@@ -228,12 +228,13 @@ pub fn topic(vocab: &Vocabulary, wanted: &str) -> Option<String> {
         "review" | "review response" | ":ok_hand:" | "👌" => {
             return vocab.format.review_response.as_ref().map(|review| {
                 format!(
-                    "👌 Review response\n{}\n\n{}\n{}\n\nOptional Git trailer: {}: <{}>\n",
+                    "👌 Review response\n{}\n\n{}\n{}\n\nOptional Git trailer: {}: <{}>\n{}\n",
                     review.meaning,
                     review.subject,
                     review.example,
                     review.optional_trailer,
-                    review.trailer_format
+                    review.trailer_format,
+                    review.link_order
                 )
             });
         }

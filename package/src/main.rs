@@ -75,7 +75,7 @@ enum Action {
         /// Select a harness explicitly when session discovery is ambiguous.
         #[arg(long, value_enum)]
         harness: Option<signature::Harness>,
-        /// Append an HTTPS review permalink as a Git trailer. Repeat for additional links.
+        /// First give the author’s specific reply, or the finding if unanswered. Repeat for related comments.
         #[arg(long = "review-thread", value_name = "URL")]
         review_threads: Vec<String>,
     },

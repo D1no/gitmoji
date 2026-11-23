@@ -15,6 +15,7 @@ meaning = "This authored decision addresses feedback from a human or automated r
 optional_trailer = "Review-Thread"
 trailer_format = "HTTPS URL"
 repeatable = true
+link_order = "First link: the author’s most specific response addressing the change, or the reviewer’s exact finding when there is no reply. Subsequent links point to related comments that explain this decision."
 
 [[rules]]
 title = "Pair first"
@@ -78,7 +79,7 @@ text = "The author of a commit is the person responsible for it. An agent never 
 
 [[writing]]
 title = "Changes requested in review"
-text = "Explain the reason for the change in the body. If the feedback has a permalink, add a Review-Thread trailer to the final Git trailer paragraph after any signature. Use a separate trailer for each related review reference. For verbal feedback, omit the trailer."
+text = "Explain the reason for the change in the body. If the feedback has a permalink, add a Review-Thread trailer to the final Git trailer paragraph after any signature. Put the author’s most concrete response first, or the precise finding if there is no reply. Add a separate trailer for each related comment. For verbal feedback, omit the trailer."
 
 [[writing]]
 title = "Emojis, not shortcodes"
