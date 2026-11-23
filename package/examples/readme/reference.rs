@@ -4,38 +4,40 @@ use std::fmt::Write as _;
 
 use gitmoji_triangle::vocabulary::{Slot, Vocabulary};
 
-/// Render each lane in sheet order, keeping entries from the same group in one cell.
+/// Keep each lane in one cell so its subsections can be read independently.
 pub fn render(vocab: &Vocabulary) -> String {
-    let mut output = String::from("| Lane | Group | Emojis and meanings |\n| --- | --- | --- |\n");
-    for (slot, lane) in [
+    let lanes = [
         (Slot::Area, "Area"),
-        (Slot::Behaviour, "Behaviour"),
+        (Slot::Behaviour, "Behavior"),
         (Slot::Intent, "Intent"),
-    ] {
+    ];
+    let mut output = String::from("<table>\n<thead><tr>");
+    for (_, title) in lanes {
+        let _ = write!(output, "<th>{title}</th>");
+    }
+    output.push_str("</tr></thead>\n<tbody><tr>\n");
+    for (slot, _) in lanes {
+        output.push_str("<td valign=\"top\" width=\"33%\">\n");
         for group in vocab.groups_in(slot) {
-            let _ = write!(output, "| {lane} | {} | ", cell_text(&group.name));
-            for (index, entry) in group.entries.iter().enumerate() {
-                if index > 0 {
-                    output.push_str("<br>");
-                }
-                let _ = write!(
+            let _ = writeln!(output, "<h3>{}</h3>", html_text(&group.name));
+            for entry in &group.entries {
+                let _ = writeln!(
                     output,
-                    "{} **{}** — {}",
-                    entry.emoji,
-                    cell_text(&entry.name),
-                    cell_text(&entry.meaning)
+                    "<p>{} <strong>{}</strong> — {}</p>",
+                    html_text(&entry.emoji),
+                    html_text(&entry.name),
+                    html_text(&entry.meaning)
                 );
             }
-            output.push_str(" |\n");
         }
+        output.push_str("</td>\n");
     }
+    output.push_str("</tr></tbody>\n</table>\n");
     output
 }
 
-fn cell_text(text: &str) -> String {
+fn html_text(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
-        .replace('|', "&#124;")
-        .replace(['\r', '\n'], " ")
 }

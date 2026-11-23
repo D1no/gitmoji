@@ -60,31 +60,96 @@ A later 🏁 commit records the outcome on the same ticket.
 
 ## Vocabulary by lane
 
-<details>
-<summary>Browse the areas, behaviours and intents by group</summary>
-
-| Lane | Group | Emojis and meanings |
-| --- | --- | --- |
-| Area | system | 🎨 **Experience** — The user's side of the coin: what people see, touch, read and feel, whether it is a feature or a quality such as speed or polish.<br>🧩 **Capability** — The other side of the coin: what the system does to make that experience possible. Services and logic.<br>🛰️ **Integration** — Connections to systems outside this repo, internal or external.<br>🗃️ **Data** — The running system's own schemas, migrations and stored data.<br>🧠 **AI** — Behaviour that was fitted, not written out: everything a model or agent does inside the system. Choose 🧠 when a model's output is what changes, 🗃️ when stored or derived data is.<br>🧱 **Infrastructure** — Cloud resources, containers and environments. |
-| Area | workbench | 🧑‍💻 **Builder experience** — What the people who build the product work with, engineers, data scientists and product people alike: local setup, scripts, internal pages and explorers.<br>👷 **CI** — Pipelines, builds and checks.<br>🤖 **Agent toolkit** — What only coding agents work with: their instructions on how to work, memory, skills and their toolbelt. |
-| Behaviour | domain logic | 👔 **Business rule** — An answer the domain gives: yes, no or how much. Eligibility, fees, limits. No time passes.<br>⛓️ **Process** — A sequence the domain wants: what happens next, and when. Waiting, retries, schedules, allowed status changes. |
-| Behaviour | controls | 🎚️ **Switch** — A feature flag. The product side turns it, for everyone or for a subset. Often stays for the life of the product, because permissions are built on it.<br>🛂 **Permissions** — Who may do what: roles, policies and entitlements for people, built on switches, and the identities our own services run as.<br>⚙️ **Setting** — Part of the product's design: something each user chooses for themselves, such as the start screen or dark mode. A tenant admin's choices for their organisation count too.<br>🔧 **Configuration** — What engineers set, per environment or per case: how many pods, which endpoint, a model's temperature for one kind of question. |
-| Behaviour | protection | 🛡️ **Validation guard** — Stops what should not come in, input or data, before acting on it. In the AI area it is a best-guess check and arrives with examples.<br>🥅 **Error handling** — What happens after a step has failed, and how the failure is reported back: how it recovers, the stable error code it carries, and the meaningful description people are shown. The codes are what tools such as Sentry or PostHog pick up later.<br>🔒️ **Security** — Definite controls against an attacker: encryption, authentication, patched vulnerabilities. Also privacy. |
-| Behaviour | connections | 🏷️ **Contract** — An agreed shape: types, interfaces and API schemas between modules, or the schema of something stored.<br>🔌 **Wiring** — Connects existing pieces: a resolver, a route, a registration, navigation.<br>📤 **Sends out** — Something leaves our system: an email, a notification, a webhook call, an event on a queue, an exported file. |
-| Behaviour | what it keeps | 💾 **State** — What it remembers, in memory or stored for good: fields, tables, caches, client stores.<br>🔐 **Secrets** — Repo and deployment secrets: added, rotated, removed. Not user key management. |
-| Behaviour | from data | 🎭 **Synthetic data** — Made-up or anonymised records that are safe to keep in the repository: fixtures, seeds, evaluation sets, samples derived from production. Real data never enters the repository.<br>🧮 **Transformation** — Data made from other data: a dbt model, a cleaning or normalising step, a feature computed for a model.<br>🎯 **Objective** — What counts as a good result: a loss function, a metric, the scorer of an evaluation.<br>📊 **Report** — What the numbers show people: statistics, dashboards, the recorded scores of a run, a notebook rendered to PDF. Built to last, unlike a study. |
-| Behaviour | looks | 💄 **Style** — Colours, typography, theme, design tokens.<br>📐 **Layout** — The arrangement itself changes: spacing, positioning, sizing, how things reflow. On any screen, including across a fold.<br>💫 **Delight** — A small moment that makes the product a pleasure to use: an animation, a transition, a touch of feedback people notice. Movement is the usual means, not the point.<br>🍱 **Assets** — Logos, images, icons, video, fonts. |
-| Behaviour | feel | 🚸 **Interaction** — Touch, gestures, forms and the steps of a flow.<br>📱 **Fit** — Existing behaviour is made to work on a named device, screen class, browser or operating system. The arrangement and the steps stay as they are. |
-| Behaviour | words | 💬 **Text** — Wording and literals.<br>🌐 **Language** — Making the product speak more than one language: looking messages up by key or code, the catalogue files translators work in, formats for dates and numbers, and the translations themselves.<br>📝 **Documentation** — Explains something to its readers: user guides, API docs, runbooks, contributor guides. It takes the area of what it explains; the summary names the reader when that matters. |
-| Behaviour | quality | ☑️ **Test** — A check on one piece of our own work that passes or fails before it ships: unit, contract, snapshot. It takes the area of what it checks, not 👷.<br>✅ **Journey** — A user's story played through on the real thing: someone who has state, creates state and extends it, run in a simulator or a production-like environment. Written so it could become product documentation.<br>🕹️ **Playground** — A place to try one part of the system on its own, without building the whole product: a component library, a notebook page, a simulator, a device rig.<br>⚡️ **Speed** — Faster or lighter.<br>🔊 **Telemetry** — Signals the system emits: logs, metrics, traces, healthchecks. |
-| Intent | add | 🆕 **New** — A new unit with a name and a job of its own, such as a service, a collector or a package, when no behaviour names it.<br>✨ **Feature** — Users can now do something they could not do before.<br>🏗️ **Scaffold** — Groundwork with no behaviour of its own: project setup, base components, helpers, empty views and routes. |
-| Intent | repair | 🐛 **Fix** — It did the wrong thing; now it does the right thing.<br>🩹 **Accommodation** — Adapts our code to a limit in a dependency or tool. The body names the limit in a Limitation: line. It can be permanent and can be the right decision.<br>👽️ **Outside change** — It broke or had to change because something outside this repo moved.<br>⏪️ **Reverted** — Undoes earlier work by hand, such as a migration rollback or a downgrade. A commit made with git revert keeps the line git writes and needs no tag. |
-| Intent | reshape | ♻️ **Refactor** — Restructuring inside a unit: moves, renames, internal architecture. No behaviour change. Often prepares an extraction.<br>✂️ **Extracted** — Split out into a self-standing unit with its own entry point.<br>🪢 **Folded in** — Merged into something that already exists: a duplicate into the original when it is the same thing and not merely similar, or an extracted unit back into its consumers. |
-| Intent | remove | 🧹 **Hygiene** — Dead code, redundant tests, formatting. No design change.<br>🔥 **Remove** — Takes out something that was in use. |
-| Intent | take in | ➕ **Dependency added** — A new dependency enters.<br>⬆️ **Dependency upgraded** — Upgraded or pinned.<br>➖ **Dependency removed** — A dependency leaves.<br>📦️ **Regenerated** — Generated files rebuilt from sources in this repo: code graphs, compiled output, generated types.<br>📥 **Imported** — Brought in from a run or system outside the repo. The commit body names the source. |
-| Intent | close | 🏁 **Finished** — Closes what was left open and keeps the result: a trial adopted and its switch removed, a provisional version replaced, a migration done. It says what decided it.<br>⚰️ **Buried** — Closes what was left open and removes the result. It says what decided it.<br>🚀 **Rolled out** — A rollout step: a switch or a trial opened to more users, or a version promoted to an environment. |
-
-</details>
+<table>
+<thead><tr><th>Area</th><th>Behavior</th><th>Intent</th></tr></thead>
+<tbody><tr>
+<td valign="top" width="33%">
+<h3>system</h3>
+<p>🎨 <strong>Experience</strong> — The user's side of the coin: what people see, touch, read and feel, whether it is a feature or a quality such as speed or polish.</p>
+<p>🧩 <strong>Capability</strong> — The other side of the coin: what the system does to make that experience possible. Services and logic.</p>
+<p>🛰️ <strong>Integration</strong> — Connections to systems outside this repo, internal or external.</p>
+<p>🗃️ <strong>Data</strong> — The running system's own schemas, migrations and stored data.</p>
+<p>🧠 <strong>AI</strong> — Behaviour that was fitted, not written out: everything a model or agent does inside the system. Choose 🧠 when a model's output is what changes, 🗃️ when stored or derived data is.</p>
+<p>🧱 <strong>Infrastructure</strong> — Cloud resources, containers and environments.</p>
+<h3>workbench</h3>
+<p>🧑‍💻 <strong>Builder experience</strong> — What the people who build the product work with, engineers, data scientists and product people alike: local setup, scripts, internal pages and explorers.</p>
+<p>👷 <strong>CI</strong> — Pipelines, builds and checks.</p>
+<p>🤖 <strong>Agent toolkit</strong> — What only coding agents work with: their instructions on how to work, memory, skills and their toolbelt.</p>
+</td>
+<td valign="top" width="33%">
+<h3>domain logic</h3>
+<p>👔 <strong>Business rule</strong> — An answer the domain gives: yes, no or how much. Eligibility, fees, limits. No time passes.</p>
+<p>⛓️ <strong>Process</strong> — A sequence the domain wants: what happens next, and when. Waiting, retries, schedules, allowed status changes.</p>
+<h3>controls</h3>
+<p>🎚️ <strong>Switch</strong> — A feature flag. The product side turns it, for everyone or for a subset. Often stays for the life of the product, because permissions are built on it.</p>
+<p>🛂 <strong>Permissions</strong> — Who may do what: roles, policies and entitlements for people, built on switches, and the identities our own services run as.</p>
+<p>⚙️ <strong>Setting</strong> — Part of the product's design: something each user chooses for themselves, such as the start screen or dark mode. A tenant admin's choices for their organisation count too.</p>
+<p>🔧 <strong>Configuration</strong> — What engineers set, per environment or per case: how many pods, which endpoint, a model's temperature for one kind of question.</p>
+<h3>protection</h3>
+<p>🛡️ <strong>Validation guard</strong> — Stops what should not come in, input or data, before acting on it. In the AI area it is a best-guess check and arrives with examples.</p>
+<p>🥅 <strong>Error handling</strong> — What happens after a step has failed, and how the failure is reported back: how it recovers, the stable error code it carries, and the meaningful description people are shown. The codes are what tools such as Sentry or PostHog pick up later.</p>
+<p>🔒️ <strong>Security</strong> — Definite controls against an attacker: encryption, authentication, patched vulnerabilities. Also privacy.</p>
+<h3>connections</h3>
+<p>🏷️ <strong>Contract</strong> — An agreed shape: types, interfaces and API schemas between modules, or the schema of something stored.</p>
+<p>🔌 <strong>Wiring</strong> — Connects existing pieces: a resolver, a route, a registration, navigation.</p>
+<p>📤 <strong>Sends out</strong> — Something leaves our system: an email, a notification, a webhook call, an event on a queue, an exported file.</p>
+<h3>what it keeps</h3>
+<p>💾 <strong>State</strong> — What it remembers, in memory or stored for good: fields, tables, caches, client stores.</p>
+<p>🔐 <strong>Secrets</strong> — Repo and deployment secrets: added, rotated, removed. Not user key management.</p>
+<h3>from data</h3>
+<p>🎭 <strong>Synthetic data</strong> — Made-up or anonymised records that are safe to keep in the repository: fixtures, seeds, evaluation sets, samples derived from production. Real data never enters the repository.</p>
+<p>🧮 <strong>Transformation</strong> — Data made from other data: a dbt model, a cleaning or normalising step, a feature computed for a model.</p>
+<p>🎯 <strong>Objective</strong> — What counts as a good result: a loss function, a metric, the scorer of an evaluation.</p>
+<p>📊 <strong>Report</strong> — What the numbers show people: statistics, dashboards, the recorded scores of a run, a notebook rendered to PDF. Built to last, unlike a study.</p>
+<h3>looks</h3>
+<p>💄 <strong>Style</strong> — Colours, typography, theme, design tokens.</p>
+<p>📐 <strong>Layout</strong> — The arrangement itself changes: spacing, positioning, sizing, how things reflow. On any screen, including across a fold.</p>
+<p>💫 <strong>Delight</strong> — A small moment that makes the product a pleasure to use: an animation, a transition, a touch of feedback people notice. Movement is the usual means, not the point.</p>
+<p>🍱 <strong>Assets</strong> — Logos, images, icons, video, fonts.</p>
+<h3>feel</h3>
+<p>🚸 <strong>Interaction</strong> — Touch, gestures, forms and the steps of a flow.</p>
+<p>📱 <strong>Fit</strong> — Existing behaviour is made to work on a named device, screen class, browser or operating system. The arrangement and the steps stay as they are.</p>
+<h3>words</h3>
+<p>💬 <strong>Text</strong> — Wording and literals.</p>
+<p>🌐 <strong>Language</strong> — Making the product speak more than one language: looking messages up by key or code, the catalogue files translators work in, formats for dates and numbers, and the translations themselves.</p>
+<p>📝 <strong>Documentation</strong> — Explains something to its readers: user guides, API docs, runbooks, contributor guides. It takes the area of what it explains; the summary names the reader when that matters.</p>
+<h3>quality</h3>
+<p>☑️ <strong>Test</strong> — A check on one piece of our own work that passes or fails before it ships: unit, contract, snapshot. It takes the area of what it checks, not 👷.</p>
+<p>✅ <strong>Journey</strong> — A user's story played through on the real thing: someone who has state, creates state and extends it, run in a simulator or a production-like environment. Written so it could become product documentation.</p>
+<p>🕹️ <strong>Playground</strong> — A place to try one part of the system on its own, without building the whole product: a component library, a notebook page, a simulator, a device rig.</p>
+<p>⚡️ <strong>Speed</strong> — Faster or lighter.</p>
+<p>🔊 <strong>Telemetry</strong> — Signals the system emits: logs, metrics, traces, healthchecks.</p>
+</td>
+<td valign="top" width="33%">
+<h3>add</h3>
+<p>🆕 <strong>New</strong> — A new unit with a name and a job of its own, such as a service, a collector or a package, when no behaviour names it.</p>
+<p>✨ <strong>Feature</strong> — Users can now do something they could not do before.</p>
+<p>🏗️ <strong>Scaffold</strong> — Groundwork with no behaviour of its own: project setup, base components, helpers, empty views and routes.</p>
+<h3>repair</h3>
+<p>🐛 <strong>Fix</strong> — It did the wrong thing; now it does the right thing.</p>
+<p>🩹 <strong>Accommodation</strong> — Adapts our code to a limit in a dependency or tool. The body names the limit in a Limitation: line. It can be permanent and can be the right decision.</p>
+<p>👽️ <strong>Outside change</strong> — It broke or had to change because something outside this repo moved.</p>
+<p>⏪️ <strong>Reverted</strong> — Undoes earlier work by hand, such as a migration rollback or a downgrade. A commit made with git revert keeps the line git writes and needs no tag.</p>
+<h3>reshape</h3>
+<p>♻️ <strong>Refactor</strong> — Restructuring inside a unit: moves, renames, internal architecture. No behaviour change. Often prepares an extraction.</p>
+<p>✂️ <strong>Extracted</strong> — Split out into a self-standing unit with its own entry point.</p>
+<p>🪢 <strong>Folded in</strong> — Merged into something that already exists: a duplicate into the original when it is the same thing and not merely similar, or an extracted unit back into its consumers.</p>
+<h3>remove</h3>
+<p>🧹 <strong>Hygiene</strong> — Dead code, redundant tests, formatting. No design change.</p>
+<p>🔥 <strong>Remove</strong> — Takes out something that was in use.</p>
+<h3>take in</h3>
+<p>➕ <strong>Dependency added</strong> — A new dependency enters.</p>
+<p>⬆️ <strong>Dependency upgraded</strong> — Upgraded or pinned.</p>
+<p>➖ <strong>Dependency removed</strong> — A dependency leaves.</p>
+<p>📦️ <strong>Regenerated</strong> — Generated files rebuilt from sources in this repo: code graphs, compiled output, generated types.</p>
+<p>📥 <strong>Imported</strong> — Brought in from a run or system outside the repo. The commit body names the source.</p>
+<h3>close</h3>
+<p>🏁 <strong>Finished</strong> — Closes what was left open and keeps the result: a trial adopted and its switch removed, a provisional version replaced, a migration done. It says what decided it.</p>
+<p>⚰️ <strong>Buried</strong> — Closes what was left open and removes the result. It says what decided it.</p>
+<p>🚀 <strong>Rolled out</strong> — A rollout step: a switch or a trial opened to more users, or a version promoted to an environment.</p>
+</td>
+</tr></tbody>
+</table>
 
 ## Install
 

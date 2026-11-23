@@ -64,9 +64,9 @@ fn render() -> Result<String> {
         page.push_str(section.trim_end());
         page.push_str("\n\n");
     }
-    page.push_str("## Vocabulary by lane\n\n<details>\n<summary>Browse the areas, behaviours and intents by group</summary>\n\n");
+    page.push_str("## Vocabulary by lane\n\n");
     page.push_str(&reference::render(&vocab));
-    page.push_str("\n</details>\n\n");
+    page.push('\n');
     // The standalone installation guide lives next to README.md, so relative links work in both.
     for line in INSTALL.lines() {
         if line.starts_with("# ") || line.starts_with("## ") {
