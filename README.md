@@ -37,11 +37,15 @@ The ticket ties the commits together. The scope names the part of the project th
 
 ## Special commit and pull request forms
 
-**In response to review.** After 👌, the enclosed emojis identify the decision prompted by feedback. For written feedback, `Review` links to the reviewer’s request and an optional `Addresses` list names related comments.
+### Code review
+
+The enclosed emojis identify the change requested by a reviewer. For written feedback, `Review` links to the reviewer’s request and an optional `Addresses` list names related comments.
 
 - 👌 <`🧩🐛`> #42 (checkout): reserve the last item once
 
-**Provisional work.** A 🚧 commit makes the open PR title provisional. The same issue tracks the demo through its later replacement.
+### Provisional work
+
+A 🚧 commit makes the open PR title provisional. The same issue tracks the demo through its later replacement.
 
 - 🚧 [`🎨🎭`] Preview appeal decisions
   - 🎨🎭🚧 #425 (portal): show sample appeal decisions for the demo
@@ -50,11 +54,15 @@ A later 🏁 commit records the outcome on the same ticket.
 
 - 🎨🏁 #425 (portal): replace sample decisions with the live appeal record
 
-**Vocabulary upgrade.** When a repository changes its Gitmoji pin, record the adopted version in a standalone commit.
+### Vocabulary upgrade
+
+When a repository changes its Gitmoji pin, record the adopted version in a standalone commit.
 
 - 🔺 gitmoji `0.22.0`: check commits with the same vocabulary in CI and locally
 
-**Automated job.** A job without a ticket puts an em dash in the ticket position.
+### Automated job
+
+A job without a ticket puts an em dash in the ticket position.
 
 - 🎨💄 — (tokens): take the new hues from Figma
 
@@ -134,6 +142,7 @@ A later 🏁 commit records the outcome on the same ticket.
 <p>♻️ <strong>Refactor</strong> — Restructuring inside a unit: moves, renames, internal architecture. No behaviour change. Often prepares an extraction.</p>
 <p>✂️ <strong>Extracted</strong> — Split out into a self-standing unit with its own entry point.</p>
 <p>🪢 <strong>Folded in</strong> — Merged into something that already exists: a duplicate into the original when it is the same thing and not merely similar, or an extracted unit back into its consumers.</p>
+<p>👌 <strong>Code review</strong> (prefix) — Wrap the decision prompted by feedback. Use 👌 &lt;<code>🧩♻️</code>&gt; for a refactor. <a href="#code-review">See a bug-fix example</a>.</p>
 <h3>remove</h3>
 <p>🧹 <strong>Hygiene</strong> — Dead code, redundant tests, formatting. No design change.</p>
 <p>🔥 <strong>Remove</strong> — Takes out something that was in use.</p>

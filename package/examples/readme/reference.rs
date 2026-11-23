@@ -2,6 +2,7 @@
 
 use std::fmt::Write as _;
 
+use gitmoji_triangle::subject::REVIEW_RESPONSE;
 use gitmoji_triangle::vocabulary::{Slot, Vocabulary};
 
 /// Keep each lane in one cell so its subsections can be read independently.
@@ -27,6 +28,12 @@ pub fn render(vocab: &Vocabulary) -> String {
                     html_text(&entry.emoji),
                     html_text(&entry.name),
                     html_text(&entry.meaning)
+                );
+            }
+            if slot == Slot::Intent && group.name == "reshape" {
+                let _ = writeln!(
+                    output,
+                    "<p>{REVIEW_RESPONSE} <strong>Code review</strong> (prefix) — Wrap the decision prompted by feedback. Use {REVIEW_RESPONSE} &lt;<code>🧩♻️</code>&gt; for a refactor. <a href=\"#code-review\">See a bug-fix example</a>.</p>"
                 );
             }
         }

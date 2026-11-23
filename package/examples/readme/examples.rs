@@ -42,16 +42,20 @@ pub(super) fn render(vocab: &Vocabulary) -> Result<String> {
 
     Ok(format!(
         "## Special commit and pull request forms\n\n\
-         **In response to review.** After 👌, the enclosed emojis identify the decision prompted by feedback. For written feedback, \
+         ### Code review\n\n\
+         The enclosed emojis identify the change requested by a reviewer. For written feedback, \
          `Review` links to the reviewer’s request and an optional `Addresses` list names related comments.\n\n\
          - {review}\n\n\
-         **Provisional work.** A 🚧 commit makes the open PR title provisional. The same issue tracks the demo through its later replacement.\n\n\
+         ### Provisional work\n\n\
+         A 🚧 commit makes the open PR title provisional. The same issue tracks the demo through its later replacement.\n\n\
          - {title}\n  - {provisional}\n\n\
          A later 🏁 commit records the outcome on the same ticket.\n\n\
          - {finished}\n\n\
-         **Vocabulary upgrade.** When a repository changes its Gitmoji pin, record the adopted version in a standalone commit.\n\n\
+         ### Vocabulary upgrade\n\n\
+         When a repository changes its Gitmoji pin, record the adopted version in a standalone commit.\n\n\
          - {upgrade}\n\n\
-         **Automated job.** A job without a ticket puts an em dash in the ticket position.\n\n\
+         ### Automated job\n\n\
+         A job without a ticket puts an em dash in the ticket position.\n\n\
          - {job}\n",
         title = preview.title
     ))
