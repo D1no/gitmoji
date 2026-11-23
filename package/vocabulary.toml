@@ -8,9 +8,17 @@ example = "🧩👔 #412 (server): allow an appeal within 30 days of refusal"
 job_example = "🎨💄 — (tokens): take the new hues from Figma"
 marker_example = "🔖 release 1.6.0"
 
+[format.review_response]
+subject = "👌 <`<area><behaviour or intent>[modifier]`> <ticket> (<scope>): <summary>"
+example = "👌 <`🧩🐛`> #42 (checkout): reserve the last item once"
+meaning = "This authored decision addresses feedback from a human or automated reviewer. The enclosed emojis describe what changed. The feedback can come from a conversation."
+optional_trailer = "Review-Thread"
+trailer_format = "HTTPS URL"
+repeatable = true
+
 [[rules]]
 title = "Pair first"
-text = "The emojis are the first characters of the line, with no space between them and nothing around them. First the area, then a behaviour or an intent. A lone second emoji is allowed when the area adds nothing."
+text = "Write the decision emojis together. An ordinary subject starts with that group. A review response starts with 👌 and encloses the group in literal angle brackets and backticks. First the area, then a behaviour or an intent. A lone second emoji is allowed when the area adds nothing."
 
 [[rules]]
 title = "Merge commits"
@@ -67,6 +75,10 @@ text = "Limitation: what a dependency cannot do (needed with 🩹). Source: wher
 [[writing]]
 title = "Who wrote it"
 text = "The author of a commit is the person responsible for it. An agent never adds itself as author or with a Co-Authored-By line. Instead it ends the body with an empty line and a signature that says what went into the commit. An underscore on its own line, which the hook replaces by △ and, between backticks, the version of this vocabulary the message was checked against; the hook closes every message with that line, also one no agent signed. Then the model and, in parentheses, its effort, and after a comma the agent's name, only if a person gave it one: example-model (high), editor. Then the harness and, in parentheses, the session, if there is one: Claude Code (example-session). Then, only where they apply: Sub-agents: 2 × example-helper (medium). Team: the other agents it exchanged messages with. Research: 3 searches, 12 pages. Every value comes from the harness's own record of the session, never from memory. Run gitmoji signature in the current agent session to print the signature. Where no record can be found, write unknown."
+
+[[writing]]
+title = "Changes requested in review"
+text = "Explain the reason for the change in the body. If the feedback has a permalink, add a Review-Thread trailer to the final Git trailer paragraph after any signature. Use a separate trailer for each related review reference. For verbal feedback, omit the trailer."
 
 [[writing]]
 title = "Emojis, not shortcodes"

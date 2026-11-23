@@ -114,7 +114,7 @@ enum Action {
     Staged,
     /// Show authored commits whose heading contains a vocabulary emoji, newest first.
     ///
-    /// Search any slot in the authored heading. Merge commits and emoji mentioned only in
+    /// Search any slot in the authored heading, or use 👌 for a review response. Merge commits and emoji mentioned only in
     /// prose are skipped. Recognized Dependabot upgrade shortcodes match the same emoji.
     /// Headings use the vocabulary’s canonical spelling. A valid search with no matches
     /// prints nothing and succeeds. An unknown emoji or invalid revision exits nonzero.
@@ -608,6 +608,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 } else {
                     ExitCode::FAILURE
                 });
+            }
+            if matches!(text.trim(), "👌" | ":ok_hand:")
+                && let Some(review) = guide::topic(&vocab, "review")
+            {
+                print!("{review}");
+                return Ok(ExitCode::SUCCESS);
             }
             match vocab.tokens(text.trim()) {
                 Ok(tokens) => {

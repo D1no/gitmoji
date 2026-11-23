@@ -104,6 +104,23 @@ pub struct Retired {
     pub note: String,
 }
 
+/// Canonical review-response heading and the optional provenance field in its message.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ReviewResponseFormat {
+    /// The subject grammar, including literal delimiters.
+    pub subject: String,
+    /// A complete example subject.
+    pub example: String,
+    /// When to use the wrapper.
+    pub meaning: String,
+    /// Name of the optional Git trailer.
+    pub optional_trailer: String,
+    /// Expected trailer value.
+    pub trailer_format: String,
+    /// Whether one response can cite multiple discussions.
+    pub repeatable: bool,
+}
+
 /// The shape of a subject, with examples.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Format {
@@ -115,6 +132,9 @@ pub struct Format {
     pub job_example: String,
     /// A marker commit.
     pub marker_example: String,
+    /// Available in vocabularies supporting review-response commits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_response: Option<ReviewResponseFormat>,
 }
 
 fn release_version() -> String {

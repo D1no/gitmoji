@@ -2,6 +2,7 @@ Gitmoji Triangle 0.21.0
 
   <area><behaviour or intent>[modifier] <ticket> (<scope>): <summary>
   🧩👔 #412 (server): allow an appeal within 30 days of refusal
+  👌 <`🧩🐛`> #42 (checkout): reserve the last item once   (review response)
   🎨💄 — (tokens): take the new hues from Figma   (a job made it: no ticket)
 
 Before you commit, answer four questions:
@@ -35,7 +36,7 @@ Areas, workbench: Or does it help us build the system?
 
 More: gitmoji guide groups | gitmoji guide message | gitmoji guide rules | gitmoji guide <emoji> | gitmoji guide all
 
-1. Pair first. The emojis are the first characters of the line, with no space between them and nothing around them. First the area, then a behaviour or an intent. A lone second emoji is allowed when the area adds nothing.
+1. Pair first. Write the decision emojis together. An ordinary subject starts with that group. A review response starts with 👌 and encloses the group in literal angle brackets and backticks. First the area, then a behaviour or an intent. A lone second emoji is allowed when the area adds nothing.
 2. Merge commits. An authored commit names its intention. A merge integrates existing commits and can keep its own title. History recognizes merges by their parents and still checks the authored commits they bring in. An optional PR caption summarizes their areas and activities. A verified Revert or Reapply caption names the target PR.
 3. One pair, one scope. A commit carries one pair. When two seem to fit, the test is: could a reviewer accept this part and send the rest back? The same test says when to stop: if one part is no use without the other, they are one commit. Parts forced by the main change ride along: its types, its ☑️ test, a lockfile. The scope names the package that owns the decision. A change that cannot be accepted in parts stays one commit even when it touches a second package, such as one shape mirrored in two languages.
 4. Behaviour or intent. A behaviour is a noun: the system now has a different one. An intent is a verb: what you did. If the commit changes what is promised, name the behaviour. Otherwise say what you did.

@@ -53,6 +53,9 @@ pub fn overview(vocab: &Vocabulary) -> String {
     let _ = writeln!(out, "Gitmoji Triangle {}\n", vocab.version);
     let _ = writeln!(out, "  {}", vocab.format.subject);
     let _ = writeln!(out, "  {}", vocab.format.example);
+    if let Some(review) = &vocab.format.review_response {
+        let _ = writeln!(out, "  {}   (review response)", review.example);
+    }
     let _ = writeln!(
         out,
         "  {}   (a job made it: no ticket)",
@@ -222,6 +225,18 @@ pub fn topic(vocab: &Vocabulary, wanted: &str) -> Option<String> {
     let wanted = wanted.trim();
     match wanted.to_lowercase().as_str() {
         "" | "start" | "overview" => return Some(overview(vocab)),
+        "review" | "review response" | ":ok_hand:" | "👌" => {
+            return vocab.format.review_response.as_ref().map(|review| {
+                format!(
+                    "👌 Review response\n{}\n\n{}\n{}\n\nOptional Git trailer: {}: <{}>\n",
+                    review.meaning,
+                    review.subject,
+                    review.example,
+                    review.optional_trailer,
+                    review.trailer_format
+                )
+            });
+        }
         "rules" => return Some(rules(vocab)),
         "message" | "writing" | "body" | "summary" => return Some(writing(vocab)),
         "groups" | "group" => return Some(groups(vocab)),
