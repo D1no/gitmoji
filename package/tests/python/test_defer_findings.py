@@ -37,6 +37,7 @@ class DeferFindingsTests(unittest.TestCase):
         self.issue_comments = []
         self.replies = []
         self.writes = []
+        self.close_after_reply = False
         self.fail_resolution = False
         case = self
 
@@ -104,6 +105,8 @@ class DeferFindingsTests(unittest.TestCase):
                 if self.path == "/api/v3/repos/project/app/pulls/12/comments/502/replies":
                     case.writes.append(("reply", 502))
                     case.replies.append({**comment, "in_reply_to_id": 502})
+                    if case.close_after_reply:
+                        case.issue["state"] = "closed"
                     return self.respond(comment, 201)
                 case.writes.append(("unexpected", self.path))
                 self.respond({"message": "unrecognized write"}, 404)
@@ -147,6 +150,14 @@ class DeferFindingsTests(unittest.TestCase):
         self.assertNotIn("loses data", record)
         self.assertIn("#19", self.replies[0]["body"])
         self.assertFalse(self.threads[0]["isResolved"])
+
+    def test_closed_follow_up_keeps_the_review_thread_unresolved(self):
+        self.close_after_reply = True
+        result = self.invoke("--apply", "--thread", "presentation")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be open", result.stderr)
+        self.assertEqual(self.writes, [("record", 19), ("reply", 502)])
+        self.assertFalse(self.threads[1]["isResolved"])
 
     def test_resolution_failure_retries_without_duplicate_issue_entry_or_reply(self):
         self.fail_resolution = True

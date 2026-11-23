@@ -1,5 +1,9 @@
 //! Transfer explicitly selected review findings after recording their source.
-use super::{Client, provisional::follow_up, valid_pr};
+use super::{
+    Client,
+    provisional::{check_issue, follow_up},
+    valid_pr,
+};
 use anyhow::{Context, Result, ensure};
 use clap::Args;
 use serde::Deserialize;
@@ -243,7 +247,7 @@ pub(crate) fn defer_findings(args: FindingsArgs) -> Result<()> {
     let pulls = format!("pulls/{}/comments", args.pr);
     let recorded = receipts(&client, &issues, &snap.viewer, false)?;
     let replied = receipts(&client, &pulls, &snap.viewer, true)?;
-    for thread in threads {
+    let verify_current = || -> Result<()> {
         let live = client
             .pull_refs(args.pr, &client.get_pull(args.pr)?)?
             .context("the pull request is closed")?;
@@ -251,6 +255,10 @@ pub(crate) fn defer_findings(args: FindingsArgs) -> Result<()> {
             live.head == snap.head && live.base == snap.base,
             "pull request changed; preview again"
         );
+        check_issue(&client, issue, &args.label)
+    };
+    for thread in threads {
+        verify_current()?;
         let id = thread.comments.nodes[0].database_id;
         let receipt = marker(args.pr, issue, id);
         if !recorded.contains(&(receipt.clone(), None)) {
@@ -272,6 +280,7 @@ pub(crate) fn defer_findings(args: FindingsArgs) -> Result<()> {
                 Some(&json!({"body":format!("Moved to #{issue}.\n\n{receipt}")})),
             )?;
         }
+        verify_current()?;
         let result = client.graphql(RESOLVE, &json!({"id":thread.id}))?;
         let resolved = &result["resolveReviewThread"]["thread"];
         ensure!(

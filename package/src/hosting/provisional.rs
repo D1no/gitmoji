@@ -110,6 +110,15 @@ fn validate_issue(issue: &Value, number: u64, label: &str) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn check_issue(client: &Client, number: u64, label: &str) -> Result<()> {
+    let issue = client
+        .request("GET", &format!("{}/issues/{number}", client.rest), None)
+        .with_context(|| {
+            format!("could not read follow-up issue #{number} in the base repository")
+        })?;
+    validate_issue(&issue, number, label)
+}
+
 fn resolve(client: &Client, caption: &Caption, label: &str) -> Result<Option<u64>> {
     ensure!(
         !label.trim().is_empty() && !label.chars().any(char::is_control),
@@ -117,12 +126,7 @@ fn resolve(client: &Client, caption: &Caption, label: &str) -> Result<Option<u64
     );
     let number = target(&caption.modifiers, &caption.modifier_tickets)?;
     if let Some(number) = number {
-        let issue = client
-            .request("GET", &format!("{}/issues/{number}", client.rest), None)
-            .with_context(|| {
-                format!("could not read follow-up issue #{number} in the base repository")
-            })?;
-        validate_issue(&issue, number, label)?;
+        check_issue(client, number, label)?;
     }
     Ok(number)
 }
