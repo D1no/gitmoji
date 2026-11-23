@@ -54,7 +54,7 @@ fn render() -> Result<String> {
     let mut page = String::from(
         "<!-- Generated from Gitmoji's vocabulary, CLI, examples and INSTALL.md. See docs/development.md. -->\n\n\
          # Gitmoji Triangle\n\n\
-         Gitmoji helps people and coding agents record one decision per commit. When agents land changes faster than people can read every diff, the emoji pair shows the area and intent of each change. The issue number keeps related decisions together across pull requests.\n\n",
+         Gitmoji helps people and coding agents record one decision per commit. When agents land changes faster than people can read every diff, the first emoji shows the area and the second identifies the behavior or intent. The issue number keeps related decisions together across pull requests.\n\n",
     );
     for section in [
         story::render(&vocab)?,

@@ -2,7 +2,7 @@
 
 # Gitmoji Triangle
 
-Gitmoji helps people and coding agents record one decision per commit. When agents land changes faster than people can read every diff, the emoji pair shows the area and intent of each change. The issue number keeps related decisions together across pull requests.
+Gitmoji helps people and coding agents record one decision per commit. When agents land changes faster than people can read every diff, the first emoji shows the area and the second identifies the behavior or intent. The issue number keeps related decisions together across pull requests.
 
 ## One issue, several decisions
 
@@ -39,7 +39,7 @@ The ticket ties the commits together. The scope names the part of the project th
 
 ### Code review
 
-The enclosed emojis identify the change requested by a reviewer. For written feedback, `Review` links to the reviewer’s request and an optional `Addresses` list names related comments.
+👌 marks a response to feedback. The enclosed emojis identify what the author changed. For written feedback, `Review` links to the reviewer’s request and an optional `Addresses` list names related comments.
 
 - 👌 <`🧩🐛`> #42 (checkout): reserve the last item once
 

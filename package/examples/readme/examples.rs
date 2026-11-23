@@ -43,7 +43,7 @@ pub(super) fn render(vocab: &Vocabulary) -> Result<String> {
     Ok(format!(
         "## Special commit and pull request forms\n\n\
          ### Code review\n\n\
-         The enclosed emojis identify the change requested by a reviewer. For written feedback, \
+         👌 marks a response to feedback. The enclosed emojis identify what the author changed. For written feedback, \
          `Review` links to the reviewer’s request and an optional `Addresses` list names related comments.\n\n\
          - {review}\n\n\
          ### Provisional work\n\n\
