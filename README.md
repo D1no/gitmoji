@@ -7,10 +7,19 @@ decisions together across pull requests.
 
 ## One issue, several decisions
 
-| Example issue #412 · Let applicants appeal a refused permit |
-| --- |
-| **Traditional commit**<br>`feat(appeals): let applicants appeal a refused permit (#412)` |
-| ``[`🧩` / `👔🛡️`] Set the filing rules for appeals``<br>`🧩👔 #412 (appeals): allow filing within 30 days of refusal`<br>`🧩🛡️ #412 (appeals): require a refusal reference`<br><br>``[`🎨` / `✨💬🐛`] Let applicants appeal from the portal``<br>`🎨✨ #412 (portal): open an appeal from the refusal notice`<br>`🎨💬 #412 (portal): explain which documents to attach`<br>``👌 <`🎨🐛`> #412 (portal): keep the form open on the final day`` |
+**Traditional commit**
+
+`feat(appeals): let applicants appeal a refused permit (#412)`
+
+**With Gitmoji**
+
+- ``[`🧩` / `👔🛡️`] Set the filing rules for appeals``
+  - `🧩👔 #412 (appeals): allow filing within 30 days of refusal`
+  - `🧩🛡️ #412 (appeals): require a refusal reference`
+- ``[`🎨` / `✨💬🐛`] Let applicants appeal from the portal``
+  - `🎨✨ #412 (portal): open an appeal from the refusal notice`
+  - `🎨💬 #412 (portal): explain which documents to attach`
+  - ``👌 <`🎨🐛`> #412 (portal): keep the form open on the final day``
 
 Before writing the first PR, an agent can ask “How long can someone appeal?”
 and “What must they supply?” Months later, a human scanning the same issue
