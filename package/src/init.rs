@@ -217,8 +217,12 @@ pub fn run(
     path: &Path,
     tickets: Tickets,
     github_workflows: bool,
+    provisional_workflow: bool,
 ) -> Result<()> {
     let top = repository_root(path)?;
+    if provisional_workflow && locate(&top).is_some() {
+        require_provisional_version(&workflow_version(&top)?)?;
+    }
     // Every file this run wrote or changed, relative to the repository. Only these are
     // offered for the commit: never a backup, a file someone added, or a file left alone.
     let mut changed = Vec::new();
@@ -226,7 +230,7 @@ pub fn run(
     let paths = SkillPaths::new(&top)?;
     let older_pin = older_pinned_version(&top)?;
     if let Some(pin) = &older_pin {
-        if github_workflows {
+        if github_workflows || provisional_workflow {
             bail!(
                 "the GitHub workflows need a numbered Gitmoji release at least 0.17.0 in gitmoji.toml (found {pin})"
             );
@@ -248,8 +252,10 @@ pub fn run(
     let is_imported = |file: &str| {
         file.starts_with(&skill_dir)
             || file.starts_with(&earlier_skill_dir)
+            || file == PROVISIONAL_INSTRUCTIONS
             || WORKFLOWS
                 .iter()
+                .chain(std::iter::once(&PROVISIONAL_WORKFLOW))
                 .any(|workflow| file == workflow.path || file == workflow.legacy_path)
     };
 
@@ -264,6 +270,22 @@ pub fn run(
     write_claude_settings(&top, &mut changed)?;
     if older_pin.is_none() {
         write_workflows(&top, &paths, github_workflows, &mut changed)?;
+        write_managed_workflows(
+            &top,
+            &paths,
+            std::slice::from_ref(&PROVISIONAL_WORKFLOW),
+            provisional_workflow,
+            &mut changed,
+        )?;
+        if !top.join(".github").is_symlink()
+            && !top.join(".github/workflows").is_symlink()
+            && matches!(
+                workflow_file(&top.join(PROVISIONAL_WORKFLOW.path))?,
+                WorkflowFile::Managed(_)
+            )
+        {
+            write_provisional_instructions(&top, &paths, &mut changed)?;
+        }
     }
 
     println!();
@@ -1017,7 +1039,65 @@ pub(super) const WORKFLOWS: &[Workflow] = &[
         template: include_str!("../../.github/workflows/gitmoji-commits.yml"),
     },
 ];
+pub(super) const PROVISIONAL_WORKFLOW: Workflow = Workflow {
+    path: ".github/workflows/gitmoji-provisional.yml",
+    legacy_path: "",
+    legacy_job: "",
+    job: "gitmoji-provisional",
+    template: include_str!("../templates/gitmoji-provisional.yml"),
+};
+const PROVISIONAL_INSTRUCTIONS: &str = ".github/instructions/gitmoji-provisional.instructions.md";
+const INSTRUCTIONS_TEXT: &str =
+    include_str!("../../.github/instructions/gitmoji-provisional.instructions.md");
+
+fn write_provisional_instructions(
+    top: &Path,
+    paths: &SkillPaths,
+    changed: &mut Vec<String>,
+) -> Result<()> {
+    let name = PROVISIONAL_INSTRUCTIONS;
+    let path = top.join(name);
+    if top.join(".github/instructions").is_symlink() || path.is_symlink() || staged(top, name)? {
+        println!("   {name} is linked or staged. Inspect it before updating.");
+        return Ok(());
+    }
+    paths.resolve(name)?;
+    match std::fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if !create_workflow_file(&path, INSTRUCTIONS_TEXT)? {
+                return Ok(());
+            }
+        }
+        Ok(meta) if meta.is_file() => {
+            let old = std::fs::read_to_string(&path)?;
+            if old.replace("\r\n", "\n") == INSTRUCTIONS_TEXT {
+                return Ok(());
+            }
+            if old.lines().nth(1) != Some(PROVISIONAL_MARKER) {
+                println!(
+                    "   {name} belongs to the project. Compare it with the shipped reviewer guidance."
+                );
+                return Ok(());
+            }
+            if !backup_workflow(top, name, &old)? {
+                return Ok(());
+            }
+            write(&path, INSTRUCTIONS_TEXT)?;
+        }
+        Ok(_) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    }
+    changed.push(name.to_owned());
+    Ok(())
+}
 pub(super) const WORKFLOW_MARKER: &str = "# Managed by gitmoji init --github-workflows";
+const PROVISIONAL_MARKER: &str = "# Managed by gitmoji init --provisional-workflow";
+
+pub(super) fn managed_workflow_header(line: &[u8]) -> bool {
+    let line = line.strip_suffix(b"\r").unwrap_or(line);
+    [WORKFLOW_MARKER.as_bytes(), PROVISIONAL_MARKER.as_bytes()].contains(&line)
+}
+
 pub(super) const WORKFLOW_PIN: &str = "  GITMOJI_VERSION: ";
 
 /// Parse a strict `major.minor.patch` release version without leading zeros.
@@ -1073,6 +1153,14 @@ fn workflow_version(top: &Path) -> Result<String> {
     }
 }
 
+fn require_provisional_version(version: &str) -> Result<()> {
+    anyhow::ensure!(
+        parse_release_version(version).is_some_and(|v| v >= (0, 21, 0)),
+        "the provisional workflow needs Gitmoji 0.21.0 or later in gitmoji.toml"
+    );
+    Ok(())
+}
+
 /// Only the release pin varies between the shipped workflow and the installed copy.
 pub(super) fn pin_workflow(template: &str, version: &str) -> String {
     let mut result = String::new();
@@ -1108,7 +1196,7 @@ pub(super) fn workflow_file(path: &Path) -> Result<WorkflowFile> {
     }
     let bytes = std::fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
     let header = bytes.split(|&b| b == b'\n').next().unwrap_or_default();
-    if header.strip_suffix(b"\r").unwrap_or(header) != WORKFLOW_MARKER.as_bytes() {
+    if !managed_workflow_header(header) {
         return Ok(WorkflowFile::ProjectOwned);
     }
     Ok(WorkflowFile::Managed(
@@ -1181,6 +1269,16 @@ fn write_workflows(
     requested: bool,
     changed: &mut Vec<String>,
 ) -> Result<()> {
+    write_managed_workflows(top, paths, WORKFLOWS, requested, changed)
+}
+
+fn write_managed_workflows(
+    top: &Path,
+    paths: &SkillPaths,
+    workflows: &[Workflow],
+    requested: bool,
+    changed: &mut Vec<String>,
+) -> Result<()> {
     if [".github", ".github/workflows"]
         .iter()
         .any(|name| top.join(name).is_symlink())
@@ -1190,13 +1288,17 @@ fn write_workflows(
         }
         return Ok(());
     }
-    for workflow in WORKFLOWS {
+    for workflow in workflows {
         let name = workflow.path;
         let legacy_name = workflow.legacy_path;
         let path = top.join(name);
         let legacy_path = top.join(legacy_name);
         let current = workflow_file(&path)?;
-        let legacy = workflow_file(&legacy_path)?;
+        let legacy = if legacy_name.is_empty() {
+            WorkflowFile::Missing
+        } else {
+            workflow_file(&legacy_path)?
+        };
         if !requested
             && !matches!(current, WorkflowFile::Managed(_))
             && !matches!(legacy, WorkflowFile::Managed(_))
@@ -1219,6 +1321,9 @@ fn write_workflows(
             continue;
         }
         let version = workflow_version(top)?;
+        if workflow.job == PROVISIONAL_WORKFLOW.job {
+            require_provisional_version(&version)?;
+        }
         let content = pin_workflow(workflow.template, &version);
         let current_text = match current {
             WorkflowFile::Managed(ref text) => Some(text),
@@ -2179,7 +2284,7 @@ Work it out once, then add a script here so the next agent does not have to.
         .unwrap();
 
         let vocab = Vocabulary::builtin().unwrap();
-        run(&vocab, &top, Tickets::Github, false).unwrap();
+        run(&vocab, &top, Tickets::Github, false, false).unwrap();
         assert_eq!(
             std::fs::read_to_string(top.join(SKILL_DIR).join("SKILL.md")).unwrap(),
             old_skill
@@ -2192,7 +2297,7 @@ Work it out once, then add a script here so the next agent does not have to.
             std::fs::read_to_string(top.join(WORKFLOWS[0].path)).unwrap(),
             old_workflow
         );
-        assert!(run(&vocab, &top, Tickets::Github, true).is_err());
+        assert!(run(&vocab, &top, Tickets::Github, true, false).is_err());
 
         // Explicit --github-workflows on an older pin fails before touching hooks or Claude files.
         let clean = scratch("older-pin-fail-early");
@@ -2203,7 +2308,7 @@ Work it out once, then add a script here so the next agent does not have to.
         )
         .unwrap();
         write(&clean.join(SKILL_DIR).join("SKILL.md"), old_skill).unwrap();
-        assert!(run(&vocab, &clean, Tickets::Github, true).is_err());
+        assert!(run(&vocab, &clean, Tickets::Github, true, false).is_err());
         assert!(!clean.join("lefthook.yml").exists());
         assert!(!clean.join("CLAUDE.md").exists());
         assert!(!clean.join(".claude/settings.json").exists());
@@ -2222,7 +2327,7 @@ Work it out once, then add a script here so the next agent does not have to.
         let top = scratch("fresh-init");
         git(&top, &["init", "-q"]).unwrap();
         let vocab = Vocabulary::builtin().unwrap();
-        run(&vocab, &top, Tickets::Github, false).unwrap();
+        run(&vocab, &top, Tickets::Github, false, false).unwrap();
 
         let settings = std::fs::read_to_string(top.join("gitmoji.toml")).unwrap();
         assert!(settings.contains(&format!("version = \"{}\"", vocab.version)));
@@ -2413,5 +2518,49 @@ Work it out once, then add a script here so the next agent does not have to.
         );
         assert_eq!(without_coauthor(Some("not json")), Attribution::Unreadable);
         assert_eq!(without_coauthor(Some("[1]")), Attribution::Unreadable);
+    }
+    #[test]
+    fn provisional_workflow_enrolls_separately_and_preserves_project_instructions() {
+        let repo = tempfile::tempdir().unwrap();
+        let top = repo.path();
+        git(top, &["init", "-q"]).unwrap();
+        let vocab = Vocabulary::builtin().unwrap();
+        let settings = top.join("gitmoji.toml");
+        write(&settings, "[vocabulary]\nversion='0.20.2'\n").unwrap();
+        assert!(run(&vocab, top, Tickets::Github, true, true).is_err());
+        assert!(!top.join(SKILL_DIR).exists());
+        write(&settings, "[vocabulary]\nversion='0.21.0'\n").unwrap();
+        run(&vocab, top, Tickets::Github, true, false).unwrap();
+        assert!(!top.join(PROVISIONAL_WORKFLOW.path).exists());
+        assert!(!top.join(PROVISIONAL_INSTRUCTIONS).exists());
+        run(&vocab, top, Tickets::Github, false, true).unwrap();
+        let workflow = std::fs::read_to_string(top.join(PROVISIONAL_WORKFLOW.path)).unwrap();
+        assert_eq!(
+            workflow,
+            pin_workflow(PROVISIONAL_WORKFLOW.template, "0.21.0")
+        );
+        assert!(
+            workflow.contains("pull_request_target:")
+                && workflow.contains("--publish-status")
+                && workflow.contains("--expect-head")
+        );
+        assert!(!workflow.contains("actions/checkout"));
+        assert_eq!(
+            std::fs::read_to_string(top.join(PROVISIONAL_INSTRUCTIONS)).unwrap(),
+            INSTRUCTIONS_TEXT
+        );
+        let custom = "---\napplyTo: '**'\n---\nProject review expectations\n";
+        write(&top.join(PROVISIONAL_INSTRUCTIONS), custom).unwrap();
+        write(&settings, "[vocabulary]\nversion='0.21.1'\n").unwrap();
+        run(&vocab, top, Tickets::Github, false, false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(top.join(PROVISIONAL_INSTRUCTIONS)).unwrap(),
+            custom
+        );
+        assert!(
+            std::fs::read_to_string(top.join(PROVISIONAL_WORKFLOW.path))
+                .unwrap()
+                .contains("GITMOJI_VERSION: '0.21.1'")
+        );
     }
 }

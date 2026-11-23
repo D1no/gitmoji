@@ -169,6 +169,17 @@ impl IncomingCommits {
         title: &str,
         vocab: &Vocabulary,
     ) -> Result<caption::Caption> {
+        let settings = Config::standard()?;
+        self.summarize_pr_with_tickets(number, title, vocab, |text| settings.is_ticket(text))
+    }
+
+    pub(crate) fn summarize_pr_with_tickets(
+        &self,
+        number: u64,
+        title: &str,
+        vocab: &Vocabulary,
+        is_ticket: impl Fn(&str) -> bool,
+    ) -> Result<caption::Caption> {
         let original = caption::without_inventory(title, vocab);
         // Dependabot can shorten its stored commit subject while retaining versions and paths in the PR title.
         let title = original
@@ -184,8 +195,15 @@ impl IncomingCommits {
                     .then_some(summary)
             })
             .unwrap_or(title);
-        caption::summarize_pr(number, title, &self.subjects, self.contains_merge, vocab)
-            .map_err(anyhow::Error::msg)
+        caption::summarize_pr_with_tickets(
+            number,
+            title,
+            &self.subjects,
+            self.contains_merge,
+            vocab,
+            is_ticket,
+        )
+        .map_err(anyhow::Error::msg)
     }
 }
 

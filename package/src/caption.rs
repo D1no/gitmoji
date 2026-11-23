@@ -1,5 +1,8 @@
 //! Summarizes the authored intentions that arrive together in a pull request.
 
+use std::collections::BTreeMap;
+
+use crate::config::Config;
 use crate::subject::read_tags;
 use crate::vocabulary::{Slot, Token, Vocabulary};
 
@@ -62,6 +65,18 @@ pub fn heading<'v>(subject: &str, vocab: &'v Vocabulary) -> Option<Heading<'v>> 
     })
 }
 
+// The two PR-state signs have a fixed order independent of topological commit order.
+const MODIFIERS: [&str; 3] = ["🚧", "🧪", "💥"];
+
+/// Number of provisional signs in a canonical managed caption prefix.
+pub fn sign_count(signs: &str) -> Option<usize> {
+    match signs {
+        "🚧" | "🧪" => Some(1),
+        "🚧🧪" => Some(2),
+        _ => None,
+    }
+}
+
 fn push_distinct<'a>(symbols: &mut Vec<&'a str>, symbol: &'a str) {
     if !symbols.contains(&symbol) {
         symbols.push(symbol);
@@ -113,7 +128,11 @@ fn group_slots(
 // Only the renderer's leading inventory is ours. PR authors also use labels such
 // as "[WIP]", Markdown links and inline code in brackets at the start of a title.
 fn after_inventory<'a>(title: &'a str, vocab: &Vocabulary) -> Option<&'a str> {
-    let (groups, human) = title.strip_prefix('[')?.split_once("] ")?;
+    let (signs, inventory) = title
+        .split_once(' ')
+        .and_then(|(prefix, rest)| sign_count(prefix).map(|count| (count, rest)))
+        .unwrap_or((0, title));
+    let (groups, human) = inventory.strip_prefix('[')?.split_once("] ")?;
     if human.trim().is_empty() {
         return None;
     }
@@ -122,13 +141,13 @@ fn after_inventory<'a>(title: &'a str, vocab: &Vocabulary) -> Option<&'a str> {
         let areas = group_slots(left, AREA_LIMIT, vocab, |slot| slot == Slot::Area)?;
         if ![PR_LIMIT, MERGE_LIMIT]
             .iter()
-            .any(|limit| group_slots(right, limit - areas, vocab, activity).is_some())
+            .any(|limit| group_slots(right, limit - signs - areas, vocab, activity).is_some())
         {
             return None;
         }
     } else if ![PR_LIMIT, MERGE_LIMIT]
         .iter()
-        .any(|&limit| group_slots(groups, limit, vocab, activity).is_some())
+        .any(|&limit| group_slots(groups, limit - signs, vocab, activity).is_some())
     {
         let cluster = groups.strip_prefix('`')?.strip_suffix('`')?;
         let tags = read_tags(vocab, true, cluster).ok()?;
@@ -224,12 +243,29 @@ pub struct Caption {
     /// The former nine-slot title when it differs, for verifying historical PR landings.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previous_title: Option<String>,
+    /// All modifier glyphs observed in authored headings, in stable display order.
+    pub modifiers: Vec<String>,
+    /// Distinct configured ticket IDs for each modifier, in first-appearance order.
+    pub modifier_tickets: BTreeMap<String, Vec<String>>,
+    // Earlier renderers included provisional signs inside the activity group and could
+    // truncate a modifier. Compare exact prior output when verifying historical landings.
+    #[serde(skip)]
+    historical_titles: Vec<String>,
     /// The landed commit subject, including the GitHub PR suffix.
     pub subject: String,
     /// Incoming non-merge commits with a recognized heading.
     pub recognized: usize,
     /// All incoming non-merge commits, including those with unrecognized headings.
     pub total: usize,
+}
+
+impl Caption {
+    /// Match an exact modern or historical rendering of this verified incoming inventory.
+    pub fn matches_landed_title(&self, local: &str) -> bool {
+        self.title == local
+            || self.previous_title.as_deref() == Some(local)
+            || self.historical_titles.iter().any(|title| title == local)
+    }
 }
 
 /// Formats the landed commit subject from its authored commits, in first-appearance order.
@@ -262,6 +298,21 @@ pub fn summarize_pr(
     contains_merge: bool,
     vocab: &Vocabulary,
 ) -> Result<Caption, String> {
+    let settings = Config::standard().map_err(|err| err.to_string())?;
+    summarize_pr_with_tickets(number, title, subjects, contains_merge, vocab, |text| {
+        settings.is_ticket(text)
+    })
+}
+
+/// Use a project's configured ticket syntax for machine-readable modifier evidence.
+pub fn summarize_pr_with_tickets(
+    number: u64,
+    title: &str,
+    subjects: &[String],
+    contains_merge: bool,
+    vocab: &Vocabulary,
+    is_ticket: impl Fn(&str) -> bool,
+) -> Result<Caption, String> {
     if number == 0 {
         return Err("use a positive pull request number".to_string());
     }
@@ -279,19 +330,49 @@ pub fn summarize_pr(
     } else {
         PR_LIMIT
     };
-    let inventory = Inventory::from_subjects(subjects, vocab);
-    let render_title = |limit| match inventory.render(limit) {
-        Some(groups) => format!("[{groups}] {human}"),
+    let inventory = Inventory::from_subjects(subjects, vocab, is_ticket);
+    let modifiers = MODIFIERS
+        .iter()
+        .filter(|m| inventory.modifier_tickets.contains_key(**m))
+        .map(|m| (*m).to_owned())
+        .collect();
+    let signs = inventory.signs();
+    let mut text = human;
+    // Authors can type their own supported sign ahead of a new title. The editable
+    // text still owns other emoji and titles made up entirely of a sign.
+    while let Some((manual, rest)) = text.split_once(' ')
+        && sign_count(manual).is_some()
+        && !rest.trim().is_empty()
+        && manual.chars().all(|sign| signs.contains(sign))
+    {
+        text = rest;
+    }
+    let render_title = |limit| match inventory.prefix(limit, &signs) {
+        Some(prefix) => format!("{prefix} {text}"),
         None => human.to_owned(),
     };
     let title = render_title(limit);
     let previous_title = contains_merge
         .then(|| render_title(PR_LIMIT))
         .filter(|old| old != &title);
+    let mut historical_titles = Vec::new();
+    if !inventory.modifier_tickets.is_empty() {
+        for width in [limit, PR_LIMIT] {
+            if let Some(groups) = inventory.render(&inventory.activities, width, false) {
+                let old = format!("[{groups}] {human}");
+                if old != title && !historical_titles.contains(&old) {
+                    historical_titles.push(old);
+                }
+            }
+        }
+    }
     Ok(Caption {
         previous_title,
         subject: format!("{title} (#{number})"),
         title,
+        historical_titles,
+        modifiers,
+        modifier_tickets: inventory.modifier_tickets,
         recognized: inventory.recognized,
         total: subjects.len(),
     })
@@ -300,9 +381,8 @@ pub fn summarize_pr(
 /// Render the leading, bracketed inventory for a local branch merge, if any
 /// incoming authored commit carries recognized symbols.
 pub fn merge_inventory(subjects: &[String], vocab: &Vocabulary) -> Option<String> {
-    Inventory::from_subjects(subjects, vocab)
-        .render(MERGE_LIMIT)
-        .map(|groups| format!("[{groups}]"))
+    let inventory = Inventory::from_subjects(subjects, vocab, |_| false);
+    inventory.prefix(MERGE_LIMIT, &inventory.signs())
 }
 
 struct Inventory<'v> {
@@ -310,18 +390,27 @@ struct Inventory<'v> {
     activities: Vec<&'v str>,
     one_heading: bool,
     recognized: usize,
+    modifier_tickets: BTreeMap<String, Vec<String>>,
 }
 
 impl<'v> Inventory<'v> {
-    fn from_subjects(subjects: &[String], vocab: &'v Vocabulary) -> Self {
+    fn from_subjects(
+        subjects: &[String],
+        vocab: &'v Vocabulary,
+        is_ticket: impl Fn(&str) -> bool,
+    ) -> Self {
         let mut inventory = Self {
             areas: Vec::new(),
             activities: Vec::new(),
             one_heading: true,
             recognized: 0,
+            modifier_tickets: BTreeMap::new(),
         };
         let mut first = None;
-        for item in subjects.iter().filter_map(|s| heading(s, vocab)) {
+        for subject in subjects {
+            let Some(item) = heading(subject, vocab) else {
+                continue;
+            };
             inventory.recognized += 1;
             inventory.one_heading &= item == *first.get_or_insert(item);
             if let Some(area) = item.area {
@@ -330,23 +419,67 @@ impl<'v> Inventory<'v> {
             push_distinct(&mut inventory.activities, item.activity);
             if let Some(modifier) = item.modifier {
                 push_distinct(&mut inventory.activities, modifier);
+                let tickets = inventory
+                    .modifier_tickets
+                    .entry(modifier.to_owned())
+                    .or_default();
+                if let Some(ticket) = subject.split_whitespace().nth(1)
+                    && ticket != "—"
+                    && is_ticket(ticket)
+                    && !tickets.iter().any(|seen| seen == ticket)
+                {
+                    tickets.push(ticket.to_owned());
+                }
             }
         }
         inventory
     }
 
-    fn render(&self, limit: usize) -> Option<String> {
+    fn signs(&self) -> String {
+        MODIFIERS[..2]
+            .iter()
+            .copied()
+            .filter(|m| self.modifier_tickets.contains_key(*m))
+            .collect()
+    }
+
+    fn prefix(&self, limit: usize, signs: &str) -> Option<String> {
+        let activities: Vec<_> = self
+            .activities
+            .iter()
+            .copied()
+            .filter(|symbol| !MODIFIERS[..2].contains(symbol))
+            .collect();
+        let groups = self.render(&activities, limit - signs.chars().count(), true)?;
+        if signs.is_empty() {
+            Some(format!("[{groups}]"))
+        } else {
+            Some(format!("{signs} [{groups}]"))
+        }
+    }
+
+    fn render(&self, activities: &[&str], limit: usize, keep_breaking: bool) -> Option<String> {
         if self.recognized == 0 {
             return None;
         }
+        let render_activities = |slots| {
+            if keep_breaking && activities.len() > slots && activities[slots - 1..].contains(&"💥")
+            {
+                // Keep the first activities in their original order, reserving the last
+                // visible slot for the breaking modifier and one for the ellipsis.
+                format!("`{}💥`…", activities[..slots - 2].concat())
+            } else {
+                render_group(activities, slots)
+            }
+        };
         Some(if self.one_heading {
-            format!("`{}{}`", self.areas.concat(), self.activities.concat())
+            format!("`{}{}`", self.areas.concat(), activities.concat())
         } else if self.areas.is_empty() {
-            render_group(&self.activities, limit)
+            render_activities(limit)
         } else {
             let area_slots = self.areas.len().min(AREA_LIMIT);
             let left = render_group(&self.areas, AREA_LIMIT);
-            let right = render_group(&self.activities, limit - area_slots);
+            let right = render_activities(limit - area_slots);
             format!("{left} / {right}")
         })
     }
@@ -372,7 +505,7 @@ mod tests {
             ]),
             "[`🧑‍💻🛡️`] Preview"
         );
-        assert_eq!(caption(&["🧩✨🧪 old ticket"]), "[`🧩✨🧪`] Preview");
+        assert_eq!(caption(&["🧩✨🧪 old ticket"]), "🧪 [`🧩✨`] Preview");
     }
 
     #[test]
@@ -473,6 +606,100 @@ mod tests {
         assert_eq!(result.title, "[WIP] Update docs");
         assert_eq!(result.subject, "[WIP] Update docs (#17)");
         assert_eq!((result.recognized, result.total), (0, 1));
+    }
+
+    #[test]
+    fn late_modifiers_survive_both_caps_and_repeated_title_sync() {
+        let vocab = Vocabulary::builtin().unwrap();
+        let rows: Vec<_> = [
+            "🧱🔧",
+            "🎨✨",
+            "👷📝",
+            "🧩🛂",
+            "👷♻",
+            "🧱☑",
+            "👷🔊",
+            "👷🔥",
+            "👷🐛",
+            "👷🔐",
+            "👷🔌",
+            "👷🔒",
+            "👷🔧🧪 #42",
+            "🎨✨💥 #77",
+            "🧱🔥🚧 #42",
+            "🧱🐛🚧 #42",
+            "👷🐛🚧 #43",
+        ]
+        .map(String::from)
+        .into();
+        for wide in [false, true] {
+            let preview = |name| summarize_pr(17, name, &rows, wide, &vocab).unwrap();
+            let result = preview("Preview");
+            assert_eq!(result.modifiers, ["🚧", "🧪", "💥"]);
+            assert_eq!(result.modifier_tickets["🚧"], ["#42", "#43"]);
+            assert_eq!(result.modifier_tickets["🧪"], ["#42"]);
+            assert_eq!(result.modifier_tickets["💥"], ["#77"]);
+            assert!(result.title.starts_with("🚧🧪 [`🧱🎨`… / `"));
+            assert!(result.title.ends_with("💥`…] Preview"));
+            for symbol in ["🚧", "🧪", "💥"] {
+                assert_eq!(result.title.matches(symbol).count(), 1);
+            }
+            assert_eq!(without_inventory(&result.title, &vocab), "Preview");
+            assert_eq!(preview(&result.subject).title, result.title);
+            assert!(result.matches_landed_title("[`🧱🎨`… / `🔧✨📝🛂♻️`…] Preview"));
+            assert!(!result.matches_landed_title("[`🧱🎨`… / `🔧✨📝🛂♻️`…] Other PR"));
+            assert_eq!(
+                summarize(17, &result.title, &[], &vocab).unwrap().title,
+                "Preview"
+            );
+        }
+    }
+
+    #[test]
+    fn resync_follows_authored_signs_and_preserves_other_leading_emoji() {
+        let vocab = Vocabulary::builtin().unwrap();
+        let rows = ["🎨✨🚧 #12".to_owned()];
+        let expected = "🚧 [`🎨✨`] Greybox";
+        for title in [
+            "Greybox",
+            "🚧 Greybox",
+            "🧪 [`🎨✨`] Greybox",
+            "[`🎨✨🚧`] Greybox",
+        ] {
+            assert_eq!(summarize(17, title, &rows, &vocab).unwrap().title, expected);
+        }
+        for title in [
+            "🚧 Road works",
+            "🧪 [WIP] Greybox",
+            "🚧 [`unknown`] Road works",
+        ] {
+            let settled = summarize(17, title, &["🎨✨ #12".into()], &vocab).unwrap();
+            assert_eq!(settled.title, format!("[`🎨✨`] {title}"));
+            assert!(settled.modifiers.is_empty());
+            assert_eq!(without_inventory(title, &vocab), title);
+        }
+        let data = summarize_pr_with_tickets(
+            17,
+            "Preview",
+            &[
+                "🧱✨🚧 DEMO-12".into(),
+                "🧱✨🚧 DEMO-12".into(),
+                "🧱✨🚧 #77".into(),
+                "🧱🔧🧪 —".into(),
+            ],
+            false,
+            &vocab,
+            |t| t.starts_with("DEMO-"),
+        )
+        .unwrap();
+        assert_eq!(data.modifier_tickets["🚧"], ["DEMO-12"]);
+        assert!(data.modifier_tickets["🧪"].is_empty());
+        let branch = merge_inventory(&rows, &vocab).unwrap();
+        assert!(is_branch_caption(
+            &format!("{branch} topic into trunk: Greybox"),
+            "Arrived from topic (1):",
+            &vocab
+        ));
     }
 
     #[test]

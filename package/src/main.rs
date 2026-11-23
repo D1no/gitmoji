@@ -15,6 +15,7 @@ use gitmoji_triangle::staged::Staged;
 use gitmoji_triangle::vocabulary::Vocabulary;
 
 mod changelog;
+mod debt;
 mod doctor;
 mod history;
 mod hosting;
@@ -46,6 +47,17 @@ enum Action {
         /// Two revisions, e.g. v1.0.0..v1.1.0, or a single tip for the first release.
         range: String,
     },
+    /// List provisional and exploration tickets still open in authored Git history.
+    Open {
+        /// A tip revision (default HEAD) or FROM..TO to limit openings to a range.
+        range: Option<String>,
+        /// Print a JSON array with the source commits for each ticket.
+        #[arg(long)]
+        json: bool,
+        /// Exit with status 1 after printing any open tickets.
+        #[arg(long)]
+        fail_if_any: bool,
+    },
     /// Check the installed binary, release pin, hooks, skill, workflows and Dependabot prefixes.
     ///
     /// Reads the current Git worktree. Exit 0 means every component is ok or
@@ -66,8 +78,12 @@ enum Action {
     },
     /// Synchronize a GitHub pull request title from its incoming commits.
     PrTitle(hosting::TitleArgs),
+    /// Check a provisional PR’s follow-up issue or synchronize its PR body.
+    ProvisionalPr(hosting::ProvisionalArgs),
     /// Preview or submit a verified direct merge on GitHub.
     GithubMerge(hosting::MergeArgs),
+    /// Preview unresolved review threads, or transfer selected findings to their verified follow-up.
+    DeferFindings(hosting::FindingsArgs),
     /// Check a commit message. As a commit-msg hook: `gitmoji check --fix {1}`.
     Check {
         /// The file git wrote the message to.
@@ -161,6 +177,9 @@ enum Action {
         /// Install or update the GitHub workflows for PR titles and commit checks.
         #[arg(long)]
         github_workflows: bool,
+        /// Enroll in the provisional follow-up check and its reviewer instructions.
+        #[arg(long)]
+        provisional_workflow: bool,
     },
     /// Print the version of the vocabulary this command speaks.
     Vocabulary,
@@ -345,6 +364,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
         hosting::sync_title(args)?;
         return Ok(ExitCode::SUCCESS);
     }
+    if let Action::DeferFindings(args) = cli.command {
+        hosting::defer_findings(args)?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    if let Action::ProvisionalPr(args) = cli.command {
+        return hosting::provisional_pr(args);
+    }
     if let Action::GithubMerge(args) = cli.command {
         hosting::merge(args)?;
         return Ok(ExitCode::SUCCESS);
@@ -366,6 +392,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         path,
         tickets,
         github_workflows,
+        provisional_workflow,
     } = &cli.command
     {
         // Before the settings are read: a repository that has none yet is the usual case.
@@ -374,6 +401,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             path.as_deref().unwrap_or(Path::new(".")),
             *tickets,
             *github_workflows,
+            *provisional_workflow,
         )?;
         return Ok(ExitCode::SUCCESS);
     }
@@ -433,6 +461,17 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
     config.keeps_comments = keeps_comments();
     match cli.command {
+        Action::Open {
+            range,
+            json,
+            fail_if_any,
+        } => debt::run(
+            range.as_deref().unwrap_or("HEAD"),
+            json,
+            fail_if_any,
+            &config,
+            &vocab,
+        ),
         Action::Changelog { range } => {
             print!("{}", changelog::render(&range, &config, &vocab)?);
             Ok(ExitCode::SUCCESS)
@@ -601,7 +640,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         | Action::Pin
         | Action::Signature { .. }
         | Action::PrTitle(_)
+        | Action::ProvisionalPr(_)
         | Action::GithubMerge(_)
+        | Action::DeferFindings(_)
         | Action::Init { .. }
         | Action::MergeMessage { .. } => Ok(ExitCode::SUCCESS),
         Action::History {
@@ -615,7 +656,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             head,
         } => {
             let incoming = history::incoming_commits(&base, &[&head], &vocab)?;
-            let caption = incoming.summarize_pr(pr, &title, &vocab)?;
+            let caption = incoming
+                .summarize_pr_with_tickets(pr, &title, &vocab, |ticket| config.is_ticket(ticket))?;
             if json {
                 println!("{}", serde_json::to_string(&caption)?);
             } else {

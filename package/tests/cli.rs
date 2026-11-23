@@ -814,7 +814,8 @@ fn caption_coverage_follows_the_physical_pr_history() {
     );
     assert!(result.status.success(), "{}", text(&result));
     let expected = serde_json::json!({
-        "subject": "[`🎨✨`] Preview (#7)", "title": "[`🎨✨`] Preview", "recognized": 1, "total": 2
+        "subject": "[`🎨✨`] Preview (#7)", "title": "[`🎨✨`] Preview", "recognized": 1, "total": 2,
+        "modifiers": [], "modifier_tickets": {}
     });
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap(),

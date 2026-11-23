@@ -1,0 +1,65 @@
+# Managed by gitmoji init --provisional-workflow
+name: Gitmoji provisional follow-up
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, ready_for_review, converted_to_draft]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to recheck
+        type: number
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+env:
+  GITMOJI_VERSION: '0.21.0'
+
+jobs:
+  gitmoji-provisional:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: gitmoji-provisional-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr }}
+      cancel-in-progress: false
+    steps:
+      # Only this public release supplies executable code. Never check out the PR.
+      - name: Install the trusted Gitmoji release
+        id: tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool=$(mktemp -d "$RUNNER_TEMP/gitmoji-provisional.XXXXXXXX")
+          mkdir "$tool/home"
+          clean=(env -i "PATH=$PATH" "HOME=$tool/home" GIT_CONFIG_NOSYSTEM=1
+            GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0)
+          "${clean[@]}" git init --quiet "$tool/source"
+          "${clean[@]}" git -C "$tool/source" -c credential.helper= fetch --quiet --depth=1 \
+            https://github.com/D1no/gitmoji.git "refs/tags/v$GITMOJI_VERSION"
+          "${clean[@]}" git -C "$tool/source" checkout --quiet --detach 'FETCH_HEAD^{commit}'
+          "${clean[@]}" GITMOJI_BIN="$tool/bin" "$tool/source/install.sh"
+          test "$("$tool/bin/gitmoji" --version)" = "gitmoji $GITMOJI_VERSION (gitmoji-triangle)"
+          echo "path=$tool" >> "$GITHUB_OUTPUT"
+
+      - name: Check the follow-up and synchronize the PR description
+        shell: bash
+        env:
+          TOOL: ${{ steps.tool.outputs.path }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          LABEL: ${{ vars.GITMOJI_PROVISIONAL_LABEL || 'provisional' }}
+          BACKLINK: ${{ vars.GITMOJI_PROVISIONAL_BACKLINK }}
+          GH_TOKEN: ${{ github.token }}
+          GH_ENTERPRISE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          options=(--publish-status)
+          if [[ -n "$HEAD" ]]; then options+=(--expect-head "$HEAD"); fi
+          if [[ "$BACKLINK" == "true" ]]; then options+=(--backlink); fi
+          "$TOOL/bin/gitmoji" provisional-pr --repo "$GITHUB_REPOSITORY" \
+            --hostname "${GITHUB_SERVER_URL#https://}" --pr "$PR" --label "$LABEL" "${options[@]}"

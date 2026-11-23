@@ -19,6 +19,10 @@ pub(super) fn inspect(top: &Path, pin: Option<&str>, vocab: &Vocabulary) -> Vec<
             .iter()
             .map(|workflow| workflow_row(top, workflow, pin, same_release)),
     );
+    let provisional = workflow_row(top, &init::PROVISIONAL_WORKFLOW, pin, same_release);
+    if provisional.status != Status::NotEnrolled {
+        rows.push(provisional);
+    }
     rows
 }
 
@@ -107,10 +111,7 @@ fn previously_managed(top: &Path, name: &str) -> bool {
                         .stdout
                         .split(|c| *c == b'\n')
                         .next()
-                        .is_some_and(|line| {
-                            line.strip_suffix(b"\r").unwrap_or(line)
-                                == init::WORKFLOW_MARKER.as_bytes()
-                        })
+                        .is_some_and(init::managed_workflow_header)
             })
     })
 }
@@ -132,7 +133,11 @@ fn installed_workflows(top: &Path, wf: &Workflow) -> Result<(WorkflowFile, Workf
     }
     Ok((
         init::workflow_file(&top.join(wf.path))?,
-        init::workflow_file(&top.join(wf.legacy_path))?,
+        if wf.legacy_path.is_empty() {
+            WorkflowFile::Missing
+        } else {
+            init::workflow_file(&top.join(wf.legacy_path))?
+        },
     ))
 }
 
@@ -150,6 +155,9 @@ fn workflow_row(top: &Path, wf: &Workflow, pin: Option<&str>, same_release: bool
             &expected,
             match status {
                 Status::Ok | Status::NotEnrolled => "",
+                _ if wf.job == init::PROVISIONAL_WORKFLOW.job => {
+                    "gitmoji init --provisional-workflow"
+                }
                 _ => "gitmoji init --github-workflows",
             },
         )
@@ -170,7 +178,7 @@ fn workflow_row(top: &Path, wf: &Workflow, pin: Option<&str>, same_release: bool
         (_, WorkflowFile::Managed(text)) => (text, wf.legacy_path),
         (current, legacy) => {
             for (file, name) in [(current, wf.path), (legacy, wf.legacy_path)] {
-                if previously_managed(top, name) {
+                if !name.is_empty() && previously_managed(top, name) {
                     return match file {
                         WorkflowFile::Missing => row(
                             Status::Missing,
