@@ -376,3 +376,74 @@ fn release_policy_checks_outstanding_work_at_its_tip_including_prior_releases() 
             .is_empty()
     );
 }
+
+#[test]
+fn review_provenance_preserves_the_decision_in_history_and_release_notes() {
+    let project = Project::new();
+    let cwd = project.dir.path();
+    let bin = env!("CARGO_BIN_EXE_gitmoji");
+    std::fs::write(
+        cwd.join("gitmoji.toml"),
+        "[ticket]\npatterns=['TASK-[0-9]+']\n",
+    )
+    .unwrap();
+    let root = project.commit(&[], "root");
+    let first = project.commit(&[&root], "🧩🛡️🚧 TASK-8 (checkout): hold retries");
+    let review_subject = "👌 <`🧩🛡🚧`> TASK-8 (checkout): reject repeat payments";
+    let review = project.commit(
+        &[&first],
+        &format!("{review_subject}\n\nA second payment would debit the customer twice."),
+    );
+    let range = format!("{first}..{review}");
+    let checked = run(cwd, bin, &["history", &range]);
+    assert!(checked.status.success(), "{checked:?}");
+    for filter in ["👌", ":ok_hand:", "🛡️", "🚧", "🧩"] {
+        let output = run(cwd, bin, &["log", filter, &range]);
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap().trim_end(),
+            format!(
+                "{} 👌 <`🧩🛡️🚧`> TASK-8 (checkout): reject repeat payments",
+                &review[..9]
+            )
+        );
+    }
+    let caption = run(
+        cwd,
+        bin,
+        &[
+            "merge-caption",
+            "--pr",
+            "24",
+            "--title",
+            "Prevent duplicate charges",
+            "--json",
+            &root,
+            &review,
+        ],
+    );
+    assert!(caption.status.success(), "{caption:?}");
+    let caption: serde_json::Value = serde_json::from_slice(&caption.stdout).unwrap();
+    // The same decision in a bare and a review commit stays one cluster.
+    assert_eq!(caption["recognized"], 2);
+    assert_eq!(caption["title"], "🚧 [`🧩🛡️`] Prevent duplicate charges");
+    assert_eq!(
+        caption["modifier_tickets"]["🚧"],
+        serde_json::json!(["TASK-8"])
+    );
+    let landing = project.commit(&[&root, &review], caption["subject"].as_str().unwrap());
+    let release = project.markdown(&format!("{root}..{landing}"));
+    assert!(release.contains("(#24; TASK-8)"), "{release}");
+    assert!(
+        release.contains("## Still provisional\n\n- 🚧 TASK-8"),
+        "{release}"
+    );
+    assert!(!release.contains("👌"), "{release}");
+    let close = project.commit(
+        &[&landing],
+        "👌 <`🧩🏁`> TASK-8 (checkout): adopt the permanent guard",
+    );
+    let result = run(cwd, bin, &["open", "--fail-if-any", "--json", &close]);
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(String::from_utf8(result.stdout).unwrap().trim(), "[]");
+}

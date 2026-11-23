@@ -149,11 +149,12 @@ fn evidence(pr: u64, incoming: &IncomingCommits, vocab: &Vocabulary) -> Result<C
     // The aggregate caption de-duplicates tickets. Check each marked subject
     // as well, so a valid ticket cannot mask a second commit lacking one.
     for subject in &incoming.subjects {
-        if caption::heading(subject, vocab)
-            .and_then(|heading| heading.modifier)
-            .is_some_and(|marker| MARKERS.contains(&marker))
+        if let Some(heading) = caption::heading(subject, vocab)
+            && heading
+                .modifier
+                .is_some_and(|marker| MARKERS.contains(&marker))
         {
-            issue_number(subject.split_whitespace().nth(1).unwrap_or_default())?;
+            issue_number(heading.ticket.unwrap_or_default())?;
         }
     }
     incoming.summarize_pr(pr, "Follow-up check", vocab)

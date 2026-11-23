@@ -122,6 +122,14 @@ class ProvisionalTests(unittest.TestCase):
         self.assertEqual(self.run_cli("--publish-status")["policy"], "ordinary")
         self.assertEqual(self.state["pr"]["body"], "Author notes")
 
+    def test_review_responses_keep_their_own_provisional_ticket(self):
+        self.set_head(self.state["base"], "👌 <`🎨💄🚧`> #42 (app): keep the preview readable")
+        checked = self.run_cli("--check")
+        self.assertEqual(checked["follow_up_issue"], 42)
+        self.set_head(self.head, "👌 <`🎨💄🚧`> — (app): widen the title")
+        self.run_cli("--check", success=False)
+        self.assertEqual(self.state["writes"], [])
+
     def test_failed_reads_and_mixed_missing_tickets_cannot_leave_a_success_status(self):
         self.state["pull_status"] = 503
         self.run_cli("--publish-status", success=False)

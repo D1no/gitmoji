@@ -209,8 +209,11 @@ impl Arrival<'_> {
         if self.parents.split_whitespace().count() <= 1
             && let Some((heading, summary)) = title.split_once("): ")
             && heading.contains(" (")
-            && let Some(cluster) = heading.split_whitespace().next()
-            && vocab.tokens(cluster).is_ok()
+            && (caption::heading(title, vocab).is_some()
+                || heading
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|raw| vocab.tokens(raw).is_ok()))
             && !summary.trim().is_empty()
         {
             return summary.to_owned();

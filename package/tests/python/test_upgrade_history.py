@@ -155,6 +155,27 @@ class UpgradeHistory(unittest.TestCase):
             raise ValueError(result.stderr.decode())
         return json.loads(result.stdout)
 
+    def test_verified_landing_preserves_review_commit_and_its_inner_inventory(self):
+        self.git('switch', '-qc', 'review-topic')
+        message = '👌 <`🧩🛡️🚧`> #9 (preview): reject duplicate entries'
+        self.git('commit', '--allow-empty', '-qm', message, '-m', 'Review found duplicate saves.')
+        review = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-q', 'main')
+        self.git('merge', '--no-ff', 'review-topic', '-qm', 'Merge pull request #8 from fork/review-topic')
+        landing = self.git('rev-parse', 'HEAD')
+        self.prs.append({**self.pr, 'number': 8, 'title': 'Protect preview saves',
+                         'headRefName': 'review-topic', 'mergeCommit': {'oid': landing}})
+        self.members[8] = [review]
+        report = self.execute()
+        self.assertFalse(any('review' in entry for entry in report['review_or_changed_commits']))
+        self.execute(apply='candidate')
+        self.assertEqual(self.git('show', '-s', '--format=%s', 'candidate'),
+                         '🚧 [`🧩🛡️`] Protect preview saves (#8)')
+        self.assertEqual(self.git('show', '-s', '--format=%s', 'candidate^2'), message)
+        # The prior landing was recaptioned too, so the new parent changes the
+        # review commit's ID. Its complete authored message is still byte-for-byte equal.
+        self.assertEqual(commit_message('candidate^2'), commit_message(review))
+
     def test_dry_run_then_candidate_preserve_graph_and_body(self):
         self.git('revert', '--no-edit', '-m', '1', self.merge)
         self.git('revert', '--no-edit', 'HEAD')

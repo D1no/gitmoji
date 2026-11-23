@@ -18,7 +18,7 @@ use anyhow::{Context, Result, bail};
 use gitmoji_triangle::caption;
 use gitmoji_triangle::check::{check_branch_message, check_stored_message, checked_against};
 use gitmoji_triangle::config::{Config, Level};
-use gitmoji_triangle::subject;
+use gitmoji_triangle::subject::{self, REVIEW_RESPONSE, REVIEW_RESPONSE_CODE};
 use gitmoji_triangle::vocabulary::{Slot, Vocabulary, normalize};
 
 /// One commit as git stores it.
@@ -459,15 +459,20 @@ fn has_head() -> Result<bool> {
 
 /// Show authored decisions whose heading contains the requested vocabulary symbol.
 pub fn log(vocab: &Vocabulary, emoji: &str, range: Option<&str>) -> Result<ExitCode> {
-    let (_, entry) = vocab
-        .find(emoji)
-        .or_else(|| vocab.find_by_code(emoji))
-        .with_context(|| format!("expected one vocabulary emoji or shortcode, got `{emoji}`"))?;
+    let filter = if matches!(emoji, REVIEW_RESPONSE | REVIEW_RESPONSE_CODE) {
+        REVIEW_RESPONSE
+    } else {
+        let (_, entry) = vocab
+            .find(emoji)
+            .or_else(|| vocab.find_by_code(emoji))
+            .with_context(|| format!("expected one vocabulary emoji, shortcode or review-response prefix, got `{emoji}`"))?;
+        &entry.emoji
+    };
     if range.is_none() && !has_head()? {
         return Ok(ExitCode::SUCCESS);
     }
     let listed = commits(range.unwrap_or("HEAD"), vocab)?;
-    if let Err(error) = write_log(&listed, &entry.emoji, vocab)
+    if let Err(error) = write_log(&listed, filter, vocab)
         && error.kind() != io::ErrorKind::BrokenPipe
     {
         return Err(error).context("cannot write gitmoji log to stdout");
@@ -479,7 +484,8 @@ fn write_log(listed: &[Commit], emoji: &str, vocab: &Vocabulary) -> io::Result<(
     let mut output = io::stdout().lock();
     for commit in listed.iter().rev().filter(|commit| !commit.is_merge) {
         if let Some(heading) = caption::heading(commit.subject(), vocab)
-            && heading.symbols().any(|symbol| symbol == emoji)
+            && ((emoji == REVIEW_RESPONSE && heading.review_response)
+                || heading.symbols().any(|symbol| symbol == emoji))
         {
             writeln!(
                 output,
