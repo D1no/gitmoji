@@ -283,3 +283,96 @@ fn bad_ranges_and_invalid_audience_maps_fail_without_a_partial_draft() {
             .contains("needs an area")
     );
 }
+
+#[test]
+fn open_tickets_follow_causal_closures_and_reopen_on_later_authored_work() {
+    let project = Project::new();
+    let root = project.commit(&[], "🎨🎭🚧 #31 (old-scope): use sample posts");
+    let adopted = project.commit(&[&root], "🏁 #31 (old-scope): adopt the live feed");
+    let parallel = project.commit(&[&root], "🧩✨🧪 #31 (service): compare live feeds");
+    let merged = project.commit(
+        &[&adopted, &parallel],
+        "🎨🏁 #31 (ui): misleading merge subject",
+    );
+    let tip = project.commit(&[&merged], "🎨✨🚧 #31 (ui): use a mock layout");
+    git(project.dir.path(), &["update-ref", "HEAD", &tip]);
+    // Historical scope names, standalone closers, current ticket patterns and normalizers matter.
+    std::fs::write(
+        project.dir.path().join("gitmoji.toml"),
+        "[rules]\nlone_second=false\n[scope]\nallowed=['ui']\n",
+    )
+    .unwrap();
+    let open = |args: &[&str]| {
+        let mut command = vec!["open", "--json"];
+        command.extend_from_slice(args);
+        run(project.dir.path(), env!("CARGO_BIN_EXE_gitmoji"), &command)
+    };
+    let rows =
+        |output: Output| serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    let result = open(&["--fail-if-any"]);
+    assert_eq!(result.status.code(), Some(1));
+    let observed = rows(result);
+    assert_eq!(observed.as_array().unwrap().len(), 1);
+    assert_eq!(observed[0]["ticket"], "#31");
+    let openings = observed[0]["openings"].as_array().unwrap();
+    assert_eq!(openings.len(), 2);
+    assert!(
+        openings
+            .iter()
+            .any(|o| o["commit"] == parallel && o["modifier"] == "🧪")
+    );
+    assert!(
+        openings
+            .iter()
+            .any(|o| o["commit"] == tip && o["modifier"] == "🚧")
+    );
+    assert_eq!(rows(open(&[&adopted])), serde_json::json!([]));
+    let scoped = rows(open(&[&format!("{merged}..{tip}")]));
+    assert_eq!(scoped[0]["openings"].as_array().unwrap().len(), 1);
+    assert_eq!(scoped[0]["openings"][0]["commit"], tip);
+
+    let closed = project.commit(&[&tip], "🧩⚰️ #31 (service): remove both prototypes");
+    let wrong = project.commit(&[&closed], "🧩✨💥 #99 (api): replace API");
+    let prose = project.commit(&[&wrong], "Follow up on 🚧 #88 (service): notes");
+    let done = open(&[&prose, "--fail-if-any"]);
+    assert!(done.status.success());
+    assert_eq!(rows(done), serde_json::json!([]));
+    let reopen = project.commit(&[&closed], "🧩✨🧪 #31 (service): try a new source");
+    assert_eq!(rows(open(&[&reopen]))[0]["openings"][0]["commit"], reopen);
+}
+
+#[test]
+fn release_policy_checks_outstanding_work_at_its_tip_including_prior_releases() {
+    let project = Project::new();
+    let policy = project.dir.path().join("gitmoji.toml");
+    let draft = "[ticket]\npatterns=['TASK-[0-9]+']\n";
+    std::fs::write(&policy, draft).unwrap();
+    let root = project.commit(&[], "🧩✨🚧 TASK-8 (ui): prototype");
+    let clip = project.commit(&[&root], "🧩✨🧪 TASK-9 (ui): try another approach");
+    let settlement = project.commit(&[&clip], "⚰️ TASK-9 (ui): drop the approach");
+    let span = format!("{clip}..{settlement}");
+    let markdown = project.markdown(&span);
+    assert_eq!(markdown, "## Still provisional\n\n- 🚧 TASK-8\n");
+    assert_eq!(
+        project.markdown(&format!("{clip}..{clip}")),
+        "## Still provisional\n\n- 🚧 TASK-8\n- 🧪 TASK-9\n"
+    );
+
+    std::fs::write(
+        &policy,
+        format!("{draft}[changelog]\nprovisional='refuse'\n"),
+    )
+    .unwrap();
+    let refused = project.changelog(&span);
+    assert!(!refused.status.success());
+    assert!(refused.stdout.is_empty());
+    let explanation = String::from_utf8(refused.stderr).unwrap();
+    assert!(explanation.contains("TASK-8"));
+    assert!(!explanation.contains("TASK-9"));
+    let finish = project.commit(&[&settlement], "🏁 TASK-8 (ui): adopt the implementation");
+    assert!(
+        project
+            .markdown(&format!("{settlement}..{finish}"))
+            .is_empty()
+    );
+}

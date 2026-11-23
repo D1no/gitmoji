@@ -87,9 +87,22 @@ pub struct Audience {
     pub areas: Vec<String>,
 }
 
+/// Handling of open provisional work when drafting release notes.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProvisionalPolicy {
+    /// List outstanding tickets at the release revision.
+    #[default]
+    Disclose,
+    /// Refuse to produce a draft until all outstanding tickets close.
+    Refuse,
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct RawChangelog {
+    #[serde(default)]
+    provisional: ProvisionalPolicy,
     groups: Option<Vec<Audience>>,
 }
 
@@ -119,6 +132,8 @@ struct RawConfig {
 pub struct Config {
     /// Changelog sections in priority order. Omit to use the standard audience map.
     pub changelog_groups: Option<Vec<Audience>>,
+    /// Whether open provisional work is disclosed or prevents a release draft.
+    pub changelog_provisional: ProvisionalPolicy,
     ticket_patterns: Vec<Regex>,
     /// What a ticket looks like here, for messages: `#123`, `TASK-150`.
     pub ticket_example: String,
@@ -237,6 +252,7 @@ impl Config {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             changelog_groups: raw.changelog.groups,
+            changelog_provisional: raw.changelog.provisional,
             ticket_patterns,
             ticket_example: raw.ticket.example.unwrap_or_else(|| "#123".to_string()),
             scopes_allowed: raw.scope.allowed,

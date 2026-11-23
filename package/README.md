@@ -41,7 +41,7 @@ cargo build --release --locked        # target/release/gitmoji
 
 ## Draft release notes
 
-Run `gitmoji changelog v1.0.0..v1.1.0` in a complete Git checkout. For a first release, `gitmoji changelog v1.0.0` includes history from the root through that tag. Branches and commit IDs work too. The command writes Markdown to standard output and leaves the working tree unchanged. Equal endpoints produce an empty draft. If the end predates the start along the same ancestry, the command reports a reversed range and exits with an error. Diverged branches use ordinary Git two-dot semantics.
+Run `gitmoji changelog v1.0.0..v1.1.0` in a complete Git checkout. For a first release, `gitmoji changelog v1.0.0` includes history from the root through that tag. Branches and commit IDs work too. The command writes Markdown to standard output and leaves the working tree unchanged. Equal endpoints have no new landings. Any open provisional work is still evaluated at the selected tip. If the end predates the start along the same ancestry, the command reports a reversed range and exits with an error. Diverged branches use ordinary Git two-dot semantics.
 
 For example, a PR changes the interface and its deployment. One of its commits marks a breaking change. The draft gives the release editor one line.
 
@@ -66,6 +66,23 @@ areas = ["🎨", "🧩"]
 A PR appears under the first group that matches an authored area. The line shows areas outside that group so an editor can split the story. PRs without a matching area appear under the reserved heading **Other changes**. The draft takes the PR number and human title from a recognized landing, then the tickets, areas and breaking flags from the arriving authored commits. It reads the complete headings even when the short PR inventory ends in an ellipsis. Tickets follow the project's configured patterns.
 
 The range selects merge commits. Gitmoji recognizes its PR captions and GitHub's default merge subjects. Local branch merges can carry PRs into a release. Each PR appears once, and a PR integrated inside another keeps its own tickets and breaking flags. When direct, squash or rebased work appears on the first-parent release history, stderr gives the count and lists each omitted commit’s abbreviated Git ID and subject, oldest first. Standalone release and adoption markers are excluded from the count. Review that history and add any changes readers need. When the draft is empty, stderr explains why and stdout stays empty. Release-marker commits (`🔖`) contribute no entry, and a PR containing only those markers is omitted. Review the draft before publishing to combine related work and describe the change for your readers.
+
+## Tracking provisional work through a release
+
+`gitmoji open` lists tickets with outstanding 🚧 provisional work or 🧪 exploration at `HEAD`. Give a branch, commit or tag to inspect a different tip. For example, `gitmoji open v0.8.0..v0.9.0` lists surviving openings introduced after the first tag and reachable from the second. The command uses local Git history and needs a complete checkout. GitHub issue state has no effect on the result.
+
+An authored heading such as `🎨🎭🚧 #31 (feed): use sample posts for the demo` opens work on its ticket. A later `🎨🏁 #31 (feed): switch the demo to live posts` or `⚰️ #31 (feed): retire the prototype` settles all earlier openings for that ticket in its ancestry. A parallel experiment stays open until a closer descends from it. A new 🚧 or 🧪 commit after closure reopens the ticket. Merge captions, mentions in prose, ordinary Git reverts and 💥 do not record lifecycle decisions.
+
+Add `--json` for one object per ticket with its `openings`, each containing a canonical `modifier` and full source `commit` ID. An empty report is `[]`. Add `--fail-if-any` to print the same report and exit 1 while tickets remain open.
+
+`gitmoji changelog FROM..TO` evaluates **all** outstanding work at `TO`, including work introduced before `FROM`. The default setting adds a **Still provisional** section listing affected tickets, even when the range has no new PR landings. To make open work block the release draft, set the project policy:
+
+```toml
+[changelog]
+provisional = "refuse"
+```
+
+Use `"disclose"` for releases that may ship provisional work. Switch to `"refuse"` at the release milestone at which your team requires every exploration to be settled. A refusal lists the tickets on stderr and leaves stdout empty.
 
 ## Choosing policy for a commit
 

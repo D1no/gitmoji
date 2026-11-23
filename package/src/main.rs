@@ -15,6 +15,7 @@ use gitmoji_triangle::staged::Staged;
 use gitmoji_triangle::vocabulary::Vocabulary;
 
 mod changelog;
+mod debt;
 mod doctor;
 mod history;
 mod hosting;
@@ -45,6 +46,17 @@ enum Action {
     Changelog {
         /// Two revisions, e.g. v1.0.0..v1.1.0, or a single tip for the first release.
         range: String,
+    },
+    /// List provisional and exploration tickets still open in authored Git history.
+    Open {
+        /// A tip revision (default HEAD) or FROM..TO to limit openings to a range.
+        range: Option<String>,
+        /// Print a JSON array with the source commits for each ticket.
+        #[arg(long)]
+        json: bool,
+        /// Exit with status 1 after printing any open tickets.
+        #[arg(long)]
+        fail_if_any: bool,
     },
     /// Check the installed binary, release pin, hooks, skill, workflows and Dependabot prefixes.
     ///
@@ -433,6 +445,17 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
     config.keeps_comments = keeps_comments();
     match cli.command {
+        Action::Open {
+            range,
+            json,
+            fail_if_any,
+        } => debt::run(
+            range.as_deref().unwrap_or("HEAD"),
+            json,
+            fail_if_any,
+            &config,
+            &vocab,
+        ),
         Action::Changelog { range } => {
             print!("{}", changelog::render(&range, &config, &vocab)?);
             Ok(ExitCode::SUCCESS)

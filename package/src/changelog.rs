@@ -4,12 +4,13 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, Result, bail};
 use gitmoji_triangle::caption;
-use gitmoji_triangle::config::{Audience, Config};
+use gitmoji_triangle::config::{Audience, Config, ProvisionalPolicy};
 use gitmoji_triangle::vocabulary::{Slot, Vocabulary};
 
 use crate::history::{dependabot_message, display_subject, git, pr_landing};
 
 const OTHER: &str = "Other changes";
+const PROVISIONAL: &str = "Still provisional";
 
 fn default_groups() -> Vec<Audience> {
     [
@@ -34,6 +35,7 @@ fn area_groups<'a>(groups: &[Audience], vocab: &'a Vocabulary) -> Result<HashMap
             || name.trim() != name
             || name.chars().any(char::is_control)
             || name == OTHER
+            || name == PROVISIONAL
             || !names.insert(name)
         {
             bail!("expected a unique, single-line changelog group name, found `{name}`");
@@ -56,7 +58,7 @@ fn area_groups<'a>(groups: &[Audience], vocab: &'a Vocabulary) -> Result<HashMap
     Ok(areas)
 }
 
-fn endpoints(range: &str) -> Result<(Option<String>, String)> {
+pub(super) fn endpoints(range: &str) -> Result<(Option<String>, String)> {
     let (base, tip) = match range.split_once("..") {
         Some((base, tip))
             if base.is_empty() || tip.is_empty() || tip.starts_with('.') || tip.contains("..") =>
@@ -67,7 +69,7 @@ fn endpoints(range: &str) -> Result<(Option<String>, String)> {
         None => (None, range),
     };
     if git(&["rev-parse", "--is-shallow-repository"])?.trim() == "true" {
-        bail!("release notes need complete history; fetch the full history and tags, then retry");
+        bail!("this command needs complete history; fetch the full history and tags, then retry");
     }
     let resolve = |revision: &str| -> Result<String> {
         Ok(git(&[
@@ -76,7 +78,7 @@ fn endpoints(range: &str) -> Result<(Option<String>, String)> {
             "--end-of-options",
             &format!("{revision}^{{commit}}"),
         ])
-        .with_context(|| format!("cannot resolve changelog revision `{revision}`"))?
+        .with_context(|| format!("cannot resolve revision `{revision}`"))?
         .trim_end()
         .to_owned())
     };
@@ -294,16 +296,26 @@ pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result
         .unwrap_or_else(default_groups);
     let areas = area_groups(&groups, vocab)?;
     let (base, tip) = endpoints(range)?;
-    if base.as_ref() == Some(&tip) {
-        eprintln!("gitmoji changelog: empty range; both endpoints are the same commit.");
-        return Ok(String::new());
-    }
     let span = base
         .as_ref()
         .map_or_else(|| tip.clone(), |base| format!("{base}..{tip}"));
     // Every unequal TO contributes at least its tip unless FROM already reaches it.
-    if base.is_some() && git(&["rev-list", "-1", &span, "--"])?.trim().is_empty() {
+    if base.is_some()
+        && base.as_ref() != Some(&tip)
+        && git(&["rev-list", "-1", &span, "--"])?.trim().is_empty()
+    {
         bail!("reversed release range: TO is an ancestor of FROM; swap the endpoints");
+    }
+
+    let open = crate::debt::tickets(&tip, config, vocab)?;
+    if !open.is_empty() && config.changelog_provisional == ProvisionalPolicy::Refuse {
+        bail!(
+            "release draft refused: open provisional work on {}. Run `gitmoji open {tip}` to see its source commits.",
+            open.iter()
+                .map(|row| markdown_text(&row.ticket))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
 
     let log = git(&[
@@ -365,7 +377,9 @@ pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result
         }
     }
     let omitted = unlisted_first_parent(&span, &claimed, vocab)?;
-    if markdown.is_empty() {
+    if base.as_ref() == Some(&tip) {
+        eprintln!("gitmoji changelog: empty range; both endpoints are the same commit.");
+    } else if markdown.is_empty() {
         eprintln!("gitmoji changelog: no qualifying pull request landings in this range.");
     }
     if !omitted.is_empty() {
@@ -376,6 +390,19 @@ pub(super) fn render(range: &str, config: &Config, vocab: &Vocabulary) -> Result
         );
         for line in omitted {
             eprintln!("{line}");
+        }
+    }
+    if !open.is_empty() {
+        if !markdown.is_empty() {
+            markdown.push('\n');
+        }
+        markdown.push_str(&format!("## {PROVISIONAL}\n\n"));
+        for row in open {
+            markdown.push_str(&format!(
+                "- {} {}\n",
+                row.modifiers().join(" "),
+                markdown_text(&row.ticket)
+            ));
         }
     }
     Ok(markdown)
