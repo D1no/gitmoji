@@ -118,3 +118,28 @@ Each native stacked PR summarizes its own reviewed layer against its immediate b
 For a team that chooses **Squash and merge**, generate the caption while the reviewed head and base are available. Paste it into the squash dialog and keep the original squash details in the body. The target branch then has one commit for the whole PR. Its caption can point back to the review, but cannot restore the per-issue sequence of authored commits. Rebase merging produces no separate merge row. [GitHub merge methods](https://docs.github.com/en/pull-requests/reference/pull-request-merges)
 
 For a repository with existing merges, start with the [history upgrade preview](upgrade-history.md).
+
+## Land a demo or comparison with a follow-up
+
+A greybox feed for a stakeholder demo can start with `🎨✨🚧 #42 (feed): show the demo feed`. Use 🧪 for an experiment, such as comparing two feed layouts before choosing one. If the implementation will ship and only its styling is temporary, mark the commit that introduces the temporary styling. Keep settled decisions in their own commits.
+
+The managed title puts 🚧 or 🧪 before the inventory whenever any incoming authored commit uses that modifier. Both can appear on a mixed PR. For example, the open title could read <code>🚧 [`🎨` / `✨💄`] Preview the feed</code>. The merge commit carries the same title with its PR number. Write the human title when opening the PR. Gitmoji maintains the prefix, including when a commit is amended away.
+
+1. Create one issue in the base repository, label it `provisional` (or the configured label), and use that issue number in each 🚧 or 🧪 commit. Describe what can wait and how to decide whether to finish or remove it. A project board can use that label to set its own risk field.
+2. Install the opt-in integration with `gitmoji init --github-workflows --provisional-workflow`. Commit the generated workflows and reviewer instructions. Keep a PR in draft while iterating. Repository-owned previews and on-demand builds can run on drafts. Where the repository disables automatic draft review, mark the PR ready or request a review when the demo is ready. If automatic review on new pushes is enabled, subsequent pushes can request another review. [Copilot automatic review settings](https://docs.github.com/en/copilot/how-tos/copilot-on-github/set-up-copilot/configure-code-review)
+3. Keep required build, types, tests, commit validation, code scanning and secret protection in force. Narrow discretionary polish review only for the provisional part. A broken demo action, incorrect permissions, or data corruption still requires a fix. Reviewer instructions guide human and AI judgment. Required checks and review counts are configured by repository administrators.
+4. Use `gitmoji defer-findings --repo OWNER/REPO --pr 17` from a full clone with the current base and PR head fetched. Inspect the findings. Add `--thread THREAD_ID --apply` for each batch of selected polish findings (repeat `--thread` for multiple findings). Gitmoji appends a checklist comment with the file, line when available, finding and permanent discussion link to the verified issue, replies in the original thread, and resolves it after both writes succeed. Rerun with the same identity after an interrupted transfer. For Enterprise Cloud supply `--hostname YOUR-ENTERPRISE.ghe.com`; for a custom issue label pass `--label LABEL`.
+5. Merge when the required checks and project review policy allow it. `gitmoji open HEAD --json` reports open work. `gitmoji changelog FROM..TO` discloses it in release notes; a project can select `[changelog] provisional = "refuse"` once releases must contain settled work only. After finishing (🏁) or removing (⚰️) the work, use the same ticket on a closing commit without a 🚧 or 🧪 modifier and put `Closes #42` in the landing PR description to close the GitHub issue when that PR merges into the default branch. [GitHub closing keywords](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)
+
+### Use the type in CI
+
+`merge-caption --json` exposes the complete `modifiers` and `modifier_tickets` even when the displayed inventory is abbreviated. For reporting or preview routing, read those fields from the incoming base and head commits. For decisions that relax review, use the validated hosted result. Run the command from trusted workflow code, with the expected event head and the repository’s configured label. Use successful, current output to select the optional review job. On failure, require normal review or block the decision.
+
+```sh
+gitmoji provisional-pr --check --json --repo "$GITHUB_REPOSITORY" \
+  --pr "$PR_NUMBER" --expect-head "$PR_HEAD_SHA" --label provisional
+```
+
+On success the JSON field `policy` is `ordinary` or `provisional`. A project can pass this value as a protected workflow job output and use `if: needs.classify.outputs.policy == 'ordinary'` for a discretionary final-polish job. Keep the classification check itself required if its failure should block landing. Check `modifiers` when a draft preview should run specifically for 🧪. The project owns which preview environment or build channel receives a build.
+
+Keep always-required jobs independent of this decision. GitHub treats skipped jobs as successful. Editing a PR title does not change a branch ruleset, and narrowing optional polish review does not grant merge permission. [GitHub check statuses](https://docs.github.com/en/pull-requests/reference/status-checks)

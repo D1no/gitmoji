@@ -71,6 +71,8 @@ An open pull request can show the intentions of its commits before you read the 
 
 Push another commit and Gitmoji refreshes the emoji prefix. Reviewers can edit the words. When the PR lands with GitHub’s merge button, the number appears once at the end, for example `(#42)`. Enable this with the [PR title workflow and merge settings](skills/gitmoji/references/pull-requests.md#enable-automatic-pr-titles).
 
+A 🚧 provisional or 🧪 exploratory commit puts its marker before the title inventory. Projects can opt into a verified follow-up issue, defer selected review findings, and disclose unfinished work in release notes. [Provisional pull requests](skills/gitmoji/references/pull-requests.md#land-a-demo-or-comparison-with-a-follow-up)
+
 ## Guides
 
 | Guide | What it covers |
