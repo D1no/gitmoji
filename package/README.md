@@ -82,7 +82,7 @@ Add `--json` for one object per ticket with its `openings`, each containing a ca
 provisional = "refuse"
 ```
 
-Use `"disclose"` for releases that may ship provisional work. Switch to `"refuse"` at the release milestone at which your team requires every exploration to be settled. A refusal lists the tickets on stderr and leaves stdout empty.
+Disclosure is the default at every version. It gives maintainers the open tickets so they can weigh the impact on the release audience. Choose `"refuse"` only when your project explicitly requires a hard release gate. A refusal lists the tickets on stderr and leaves stdout empty.
 
 ## Choosing policy for a commit
 
