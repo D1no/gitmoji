@@ -58,7 +58,11 @@ fn canonical(vocab: &Vocabulary, cluster: &str) -> Option<String> {
 }
 
 fn fix_subject(vocab: &Vocabulary, line: &str) -> String {
-    let Ok((cluster, rest, reviewed)) = subject::authored_heading(line) else {
+    let expanded = line
+        .strip_prefix(subject::REVIEW_RESPONSE_CODE)
+        .map(|tail| format!("{}{tail}", subject::REVIEW_RESPONSE));
+    let input = expanded.as_deref().unwrap_or(line);
+    let Ok((cluster, rest, reviewed)) = subject::authored_heading(input) else {
         return line.to_string();
     };
     // Legacy bare headings could have backticks. A review response's backticks
@@ -323,6 +327,20 @@ mod tests {
             fix("# a comment first\n\n:jigsaw::necktie: #1 (a): x\r\n\r\nWhy :bug: stays.\r\n"),
             "# a comment first\n\n🧩👔 #1 (a): x\r\n\r\nWhy :bug: stays.\r\n"
         );
+    }
+
+    #[test]
+    fn review_response_shortcode_only_expands_in_a_complete_heading() {
+        assert_eq!(
+            fix(":ok_hand: <`:art::bug:`> #9 (feed): show :ok_hand: in the text"),
+            "👌 <`🎨🐛`> #9 (feed): show :ok_hand: in the text"
+        );
+        for line in [
+            ":ok_hand: [`🎨🐛`] #9 (feed): repair the preview",
+            ":ok_hand: <`:unknown:`> #9 (feed): repair the preview",
+        ] {
+            assert_eq!(fix(line), line);
+        }
     }
 
     #[test]

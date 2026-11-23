@@ -289,6 +289,8 @@ pub fn is_generated(line: &str) -> bool {
 
 /// Prefix for work prompted by code review.
 pub const REVIEW_RESPONSE: &str = "👌";
+/// Shortcode accepted by the hook for the review-response prefix.
+pub const REVIEW_RESPONSE_CODE: &str = ":ok_hand:";
 
 /// Split the leading emoji cluster from the ticket and the rest of the subject.
 ///
