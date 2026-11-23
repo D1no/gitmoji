@@ -1,4 +1,4 @@
-# Managed by gitmoji init --github-workflows
+# Managed by gitmoji init --provisional-workflow
 name: Gitmoji provisional follow-up
 
 on:

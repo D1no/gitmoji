@@ -220,6 +220,9 @@ pub fn run(
     provisional_workflow: bool,
 ) -> Result<()> {
     let top = repository_root(path)?;
+    if provisional_workflow && locate(&top).is_some() {
+        require_provisional_version(&workflow_version(&top)?)?;
+    }
     // Every file this run wrote or changed, relative to the repository. Only these are
     // offered for the commit: never a backup, a file someone added, or a file left alone.
     let mut changed = Vec::new();
@@ -1150,6 +1153,14 @@ fn workflow_version(top: &Path) -> Result<String> {
     }
 }
 
+fn require_provisional_version(version: &str) -> Result<()> {
+    anyhow::ensure!(
+        parse_release_version(version).is_some_and(|v| v >= (0, 21, 0)),
+        "the provisional workflow needs Gitmoji 0.21.0 or later in gitmoji.toml"
+    );
+    Ok(())
+}
+
 /// Only the release pin varies between the shipped workflow and the installed copy.
 pub(super) fn pin_workflow(template: &str, version: &str) -> String {
     let mut result = String::new();
@@ -1311,10 +1322,7 @@ fn write_managed_workflows(
         }
         let version = workflow_version(top)?;
         if workflow.job == PROVISIONAL_WORKFLOW.job {
-            anyhow::ensure!(
-                parse_release_version(&version).is_some_and(|v| v >= (0, 21, 0)),
-                "the provisional workflow needs Gitmoji 0.21.0 or later in gitmoji.toml"
-            );
+            require_provisional_version(&version)?;
         }
         let content = pin_workflow(workflow.template, &version);
         let current_text = match current {
@@ -2510,5 +2518,49 @@ Work it out once, then add a script here so the next agent does not have to.
         );
         assert_eq!(without_coauthor(Some("not json")), Attribution::Unreadable);
         assert_eq!(without_coauthor(Some("[1]")), Attribution::Unreadable);
+    }
+    #[test]
+    fn provisional_workflow_enrolls_separately_and_preserves_project_instructions() {
+        let repo = tempfile::tempdir().unwrap();
+        let top = repo.path();
+        git(top, &["init", "-q"]).unwrap();
+        let vocab = Vocabulary::builtin().unwrap();
+        let settings = top.join("gitmoji.toml");
+        write(&settings, "[vocabulary]\nversion='0.20.2'\n").unwrap();
+        assert!(run(&vocab, top, Tickets::Github, true, true).is_err());
+        assert!(!top.join(SKILL_DIR).exists());
+        write(&settings, "[vocabulary]\nversion='0.21.0'\n").unwrap();
+        run(&vocab, top, Tickets::Github, true, false).unwrap();
+        assert!(!top.join(PROVISIONAL_WORKFLOW.path).exists());
+        assert!(!top.join(PROVISIONAL_INSTRUCTIONS).exists());
+        run(&vocab, top, Tickets::Github, false, true).unwrap();
+        let workflow = std::fs::read_to_string(top.join(PROVISIONAL_WORKFLOW.path)).unwrap();
+        assert_eq!(
+            workflow,
+            pin_workflow(PROVISIONAL_WORKFLOW.template, "0.21.0")
+        );
+        assert!(
+            workflow.contains("pull_request_target:")
+                && workflow.contains("--publish-status")
+                && workflow.contains("--expect-head")
+        );
+        assert!(!workflow.contains("actions/checkout"));
+        assert_eq!(
+            std::fs::read_to_string(top.join(PROVISIONAL_INSTRUCTIONS)).unwrap(),
+            INSTRUCTIONS_TEXT
+        );
+        let custom = "---\napplyTo: '**'\n---\nProject review expectations\n";
+        write(&top.join(PROVISIONAL_INSTRUCTIONS), custom).unwrap();
+        write(&settings, "[vocabulary]\nversion='0.21.1'\n").unwrap();
+        run(&vocab, top, Tickets::Github, false, false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(top.join(PROVISIONAL_INSTRUCTIONS)).unwrap(),
+            custom
+        );
+        assert!(
+            std::fs::read_to_string(top.join(PROVISIONAL_WORKFLOW.path))
+                .unwrap()
+                .contains("GITMOJI_VERSION: '0.21.1'")
+        );
     }
 }
