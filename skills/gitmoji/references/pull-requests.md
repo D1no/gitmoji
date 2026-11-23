@@ -126,10 +126,33 @@ A greybox feed for a stakeholder demo can start with `🎨✨🚧 #42 (feed): sh
 The managed title puts 🚧 or 🧪 before the inventory whenever any incoming authored commit uses that modifier. Both can appear on a mixed PR. For example, the open title could read <code>🚧 [`🎨` / `✨💄`] Preview the feed</code>. The merge commit carries the same title with its PR number. Write the human title when opening the PR. Gitmoji maintains the prefix, including when a commit is amended away.
 
 1. Create one issue in the base repository, label it `provisional` (or the configured label), and use that issue number in each 🚧 or 🧪 commit. Describe what can wait and how to decide whether to finish or remove it. A project board can use that label to set its own risk field.
-2. Install the opt-in integration with `gitmoji init --github-workflows --provisional-workflow`. Commit the generated workflows and reviewer instructions. Keep a PR in draft while iterating. Repository-owned previews and on-demand builds can run on drafts. Where the repository disables automatic draft review, mark the PR ready or request a review when the demo is ready. If automatic review on new pushes is enabled, subsequent pushes can request another review. [Copilot automatic review settings](https://docs.github.com/en/copilot/how-tos/copilot-on-github/set-up-copilot/configure-code-review)
+2. Install the opt-in integration with `gitmoji init --github-workflows --provisional-workflow`. Commit the generated workflows and reviewer instructions. Keep a PR in draft while iterating. Repository-owned previews and on-demand builds can run on drafts. Where the repository disables automatic draft review, mark the PR ready or request a review when the demo is ready. For one review round with review-on-push enabled, make the final push while the PR is a draft, mark it ready, then merge the reviewed head after checks pass. A fix pushed after that review can trigger another round. [Copilot automatic review settings](https://docs.github.com/en/copilot/how-tos/copilot-on-github/set-up-copilot/configure-code-review)
 3. Keep required build, types, tests, commit validation, code scanning and secret protection in force. Narrow discretionary polish review only for the provisional part. A broken demo action, incorrect permissions, or data corruption still requires a fix. Reviewer instructions guide human and AI judgment. Required checks and review counts are configured by repository administrators.
 4. Use `gitmoji defer-findings --repo OWNER/REPO --pr 17` from a full clone with the current base and PR head fetched. Inspect the findings. Add `--thread THREAD_ID --apply` for each batch of selected polish findings (repeat `--thread` for multiple findings). Gitmoji appends a checklist comment with the file, line when available, finding and permanent discussion link to the verified issue, replies in the original thread, and resolves it after both writes succeed. Rerun with the same identity after an interrupted transfer. For Enterprise Cloud supply `--hostname YOUR-ENTERPRISE.ghe.com`; for a custom issue label pass `--label LABEL`.
 5. Merge when the required checks and project review policy allow it. `gitmoji open HEAD --json` reports open work. `gitmoji changelog FROM..TO` discloses it in release notes; a project can select `[changelog] provisional = "refuse"` once releases must contain settled work only. After finishing (🏁) or removing (⚰️) the work, use the same ticket on a closing commit without a 🚧 or 🧪 modifier and put `Closes #42` in the landing PR description to close the GitHub issue when that PR merges into the default branch. [GitHub closing keywords](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)
+
+### Enroll a checked-in branch ruleset
+
+For direct merges, let the workflow run once on the default branch’s PRs. Its commit status on the PR head is named `gitmoji/provisional`. An ordinary PR receives `pending` and then `success` after validation. A marked PR must also pass the follow-up issue and label checks. An existing PR can use the workflow’s manual recheck. The read-only classifier publishes no status.
+
+To add the entry to a ruleset maintained as JSON, ask the target GitHub host for its Actions app ID. On github.com this prints `{"context":"gitmoji/provisional","integration_id":15368}`.
+
+```sh
+gh api --hostname YOUR-HOST.ghe.com /apps/github-actions \
+  --jq '{context:"gitmoji/provisional", integration_id:.id}'
+```
+
+Merge this entry into `parameters.required_status_checks` on the existing `required_status_checks` rule. Preserve the other checks and the repository’s branch strictness. The integration ID identifies the GitHub App publishing the status. [GitHub rulesets](https://docs.github.com/en/enterprise-cloud@latest/rest/repos/rules#update-a-repository-ruleset)
+
+### Recognize a deferred review thread
+
+`defer-findings` writes the same hidden receipt as the last line of the issue entry and the thread reply. For PR 17, follow-up issue 42, and root review comment 12345, its literal form is:
+
+```html
+<!-- gitmoji-deferred pr=17 issue=42 finding=12345 -->
+```
+
+A watcher can match those three numbers and the authorized replying identity, then check that the thread is resolved. The finding ID is the database ID from the original comment’s `discussion_r12345` permalink. A reply can appear before resolution succeeds. A deferred finding still belongs on the follow-up checklist.
 
 ### Use the type in CI
 
