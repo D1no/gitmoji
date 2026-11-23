@@ -49,15 +49,32 @@ pub(super) fn target(message: &[u8]) -> Option<&str> {
     std::str::from_utf8(first.as_bytes()).ok()
 }
 
+// Historical objects may declare a different encoding for the editable title. Only
+// inspect the UTF-8 status signs themselves, then retain the original subject bytes.
+fn unsigned_inventory(subject: &[u8]) -> &[u8] {
+    let (signs, rest) = partition(subject, b" ");
+    if rest.starts_with(b"[`")
+        && std::str::from_utf8(signs)
+            .ok()
+            .and_then(caption::sign_count)
+            .is_some()
+    {
+        rest
+    } else {
+        subject
+    }
+}
+
 pub(super) fn caption_number(subject: &[u8]) -> Option<u64> {
     let m = LEGACY
         .captures(subject)
-        .or_else(|| LANDED.captures(subject))?;
+        .or_else(|| LANDED.captures(unsigned_inventory(subject)))?;
     std::str::from_utf8(m.get(1)?.as_bytes()).ok()?.parse().ok()
 }
 
 pub(super) fn local_caption(message: &[u8]) -> bool {
     let (subject, body) = partition(message, b"\n\n");
+    let subject = unsigned_inventory(subject);
     let subject = if subject.starts_with(b"[`") {
         partition(subject, b"] ").1
     } else {
@@ -266,7 +283,7 @@ fn verified_landing(
         .strip_prefix(&format!("Merge #{n} "))
         .unwrap_or(old)
         .trim_end_matches(&format!(" (#{n})")[..]);
-    if local != caption.title && caption.previous_title.as_deref() != Some(local) {
+    if !caption.matches_landed_title(local) {
         review!("caption does not match the merged PR title and incoming inventory");
     }
     Ok(Some((n, caption, evidence)))
@@ -506,4 +523,27 @@ pub(super) fn propose(
             Proposal::default()
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signed_caption_candidates_still_need_the_pr_reference_and_parent_evidence() {
+        for prefix in ["", "🚧 ", "🧪 ", "🚧🧪 "] {
+            assert_eq!(
+                caption_number(format!("{prefix}[`🎨✨`] Greybox (#42)").as_bytes()),
+                Some(42)
+            );
+            assert!(local_caption(
+                format!(
+                    "{prefix}[`🎨✨`] demo into trunk: Greybox (#42)\n\nArrived from demo (1):"
+                )
+                .as_bytes()
+            ));
+        }
+        assert_eq!(caption_number("🚧 Greybox (#42)".as_bytes()), None);
+        assert_eq!(caption_number("🚧 [WIP] Greybox (#42)".as_bytes()), None);
+    }
 }

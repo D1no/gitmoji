@@ -156,6 +156,25 @@ class TitleTests(unittest.TestCase):
         self.assertIn("closed", res2.stdout)
         self.assertEqual(self.state["patches"], [])
 
+    def test_provisional_caption_follows_amended_commits_and_manual_title(self):
+        self.git(self.work, "checkout", "--quiet", "--detach", self.base)
+        self.git(self.work, "commit", "--quiet", "--allow-empty", "-m", "🎨🎭🚧 #81 (feed): sketch a prototype")
+        provisional = self.git(self.work, "rev-parse", "HEAD")
+        self.git(self.work, "push", "--quiet", "origin", f"+{provisional}:refs/pull/12/head")
+        self.state["pull"].update(title="🚧 Greybox", head={"sha": provisional})
+        result = self.run_cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        title = self.state["patches"][-1][1]["title"]
+        self.assertEqual(title, "🚧 [`🎨🎭`] Greybox")
+
+        self.git(self.work, "commit", "--quiet", "--allow-empty", "--amend", "-m", "🎨🎭 #81 (feed): sketch a prototype")
+        settled = self.git(self.work, "rev-parse", "HEAD")
+        self.git(self.work, "push", "--quiet", "origin", f"+{settled}:refs/pull/12/head")
+        self.state["pull"].update(title=title, head={"sha": settled})
+        result = self.run_cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.state["patches"][-1][1]["title"], "[`🎨🎭`] Greybox")
+
     def test_retarget_force_push_and_human_title_edit_use_latest(self):
         self.git(self.work, "checkout", "--quiet", "trunk")
         self.git(self.work, "checkout", "--quiet", "-b", "release")

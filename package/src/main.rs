@@ -638,7 +638,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             head,
         } => {
             let incoming = history::incoming_commits(&base, &[&head], &vocab)?;
-            let caption = incoming.summarize_pr(pr, &title, &vocab)?;
+            let caption = incoming.summarize_pr_with_tickets(pr, &title, &vocab, |ticket| config.is_ticket(ticket))?;
             if json {
                 println!("{}", serde_json::to_string(&caption)?);
             } else {
