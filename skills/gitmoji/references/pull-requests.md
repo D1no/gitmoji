@@ -166,3 +166,19 @@ gitmoji provisional-pr --check --json --repo "$GITHUB_REPOSITORY" \
 On success the JSON field `policy` is `ordinary` or `provisional`. A project can pass this value as a protected workflow job output and use `if: needs.classify.outputs.policy == 'ordinary'` for a discretionary final-polish job. Keep the classification check itself required if its failure should block landing. Check `modifiers` when a draft preview should run specifically for 🧪. The project owns which preview environment or build channel receives a build.
 
 Keep always-required jobs independent of this decision. GitHub treats skipped jobs as successful. Editing a PR title does not change a branch ruleset, and narrowing optional polish review does not grant merge permission. [GitHub check statuses](https://docs.github.com/en/pull-requests/reference/status-checks)
+
+### Keep a greybox through two cleanup PRs
+
+The team previews a card feed, fixes its screen-reader labels and keyboard flow, then decides to keep the same screen. Issue #42 tracks the provisional feed. Issues #51 and #52 track independently reviewable improvements. The destination in this example is the repository’s default branch.
+
+| PR | Authored commit subjects, oldest first | PR description | `gitmoji open HEAD` on the destination after merge |
+| --- | --- | --- | --- |
+| #17 · Demo | `🎨✨🚧 #42 (feed): show the card feed for the demo` | `Preview the card feed. Follow-up: #42.` | `🚧 #42` |
+| #18 · First cleanup | `🎨💬 #51 (feed): name each card for screen readers` | `Closes #51. Part of #42.` | `🚧 #42` |
+| #19 · Final cleanup | `🎨🚸 #52 (feed): keep focus on the selected card`<br>`🎨🏁 #42 (feed): keep the demo feed as the production screen` | `Closes #52. Closes #42.` | Empty output. With `--json` the result is `[]`. |
+
+After the keyboard fix and before the 🏁 commit, the output is still `🚧 #42`. An author can finish an individual finding without deciding whether the whole feed is ready. The maintainer records acceptance after reviewing the remaining findings. The final PR’s inventory then retains both interaction and acceptance. 🏁 means the team kept the result. A later rollout or release is a separate decision.
+
+If the team discards an experimental layout, a subject such as `🎨⚰️ #42 (feed): remove the comparison layout after the trial` records that outcome. Each closer covers qualifying ancestor openings on its own ticket. Either closer settles that ticket in the listing, so save closure until all of its obligations are settled. Give independently retained or discarded alternatives distinct follow-up tickets when opening them in separate marked PRs. For a mixed existing ticket, describe both outcomes in the issue, keep the ticket open during partial cleanup, and record the final decision once.
+
+When the screen is accepted as built, a maintainer can record the reason in an acceptance note or use an explicitly empty decision commit if project policy allows it. The normal subject, body and signature rules still apply. Manually closing a GitHub issue or checking off its last item leaves the Git ledger as it was. `gitmoji changelog` reads that ledger as of the release revision. For a more descriptive release note, add the user-facing consequence alongside the ticket, for example “Screen-reader card labels are pending (#42).”
