@@ -58,14 +58,23 @@ fn canonical(vocab: &Vocabulary, cluster: &str) -> Option<String> {
 }
 
 fn fix_subject(vocab: &Vocabulary, line: &str) -> String {
-    let (first, rest) = line.split_once(' ').unwrap_or((line, ""));
-    // Backticks around the emojis were asked for by an earlier draft; they are dropped.
-    let typed = first.replace('`', "");
+    let Ok((cluster, rest, reviewed)) = subject::authored_heading(line) else {
+        return line.to_string();
+    };
+    // Legacy bare headings could have backticks. A review response's backticks
+    // belong to its outer wrapper, already removed by authored_heading.
+    let typed = cluster.replace('`', "");
     let emojis = replace_shortcodes(vocab, &typed);
-    // Only a first word made of vocabulary emojis is rewritten; anything else is left
-    // for the check to report.
+    // Only rewrite known vocabulary. Leave other input for the check to report.
     match canonical(vocab, &emojis) {
-        Some(emojis) if !emojis.is_empty() => format!("{emojis} {rest}").trim_end().to_string(),
+        Some(emojis) if !emojis.is_empty() => {
+            let heading = if reviewed {
+                format!("{} <`{emojis}`>", subject::REVIEW_RESPONSE)
+            } else {
+                emojis
+            };
+            format!("{heading} {rest}").trim_end().to_string()
+        }
         _ => line.to_string(),
     }
 }
@@ -313,6 +322,25 @@ mod tests {
         assert_eq!(
             fix("# a comment first\n\n:jigsaw::necktie: #1 (a): x\r\n\r\nWhy :bug: stays.\r\n"),
             "# a comment first\n\n🧩👔 #1 (a): x\r\n\r\nWhy :bug: stays.\r\n"
+        );
+    }
+
+    #[test]
+    fn fix_preserves_the_review_heading_and_only_normalizes_its_inner_tags() {
+        let original =
+            "👌 <`:art::bug:`> #9 (feed): repair :bulb: text\r\n\r\nThe reviewer found :bug:.\r\n";
+        let fixed = with_version_line(original);
+        assert_eq!(
+            fixed,
+            "👌 <`🎨🐛`> #9 (feed): repair :bulb: text\r\n\r\nThe reviewer found :bug:.\r\n\r\n△ `<v>`\r\n"
+        );
+        assert_eq!(
+            fix("👌 [`🎨🐛`] #9 (feed): repair"),
+            "👌 [`🎨🐛`] #9 (feed): repair"
+        );
+        assert_eq!(
+            fix("👌 <`🎨🐛``> #9 (feed): repair"),
+            "👌 <`🎨🐛``> #9 (feed): repair"
         );
     }
 
