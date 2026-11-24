@@ -74,7 +74,7 @@ for the whole vocabulary, and tell the person that the command is missing.
 
 ## Posting on GitHub
 
-When writing an issue or PR description, a conversation comment, a review, or a line reply as an agent, prepare the Markdown with `gitmoji comment sign`, verify the raw file with `gitmoji comment check`, then send that exact file. Use the ordinary PR title workflow for titles. A person writing their own comment can post directly. [Signing, tracing and harness attribution](references/agent-posts.md) · [Pre-post hooks](references/post-hooks.md)
+When writing an issue or PR description, a conversation comment, a review, or a line reply as an agent, open with a short paragraph that states your point. Put any heading, list, or suggestion block below it. Prepare the Markdown with `gitmoji comment sign`, verify the raw file with `gitmoji comment check`, then send that exact file. Use the ordinary PR title workflow for titles. A person writing their own comment can post directly. [Signing, tracing and harness attribution](references/agent-posts.md) · [Pre-post hooks](references/post-hooks.md)
 
 ## Before you write code: plan the commits
 

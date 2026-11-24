@@ -10,6 +10,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use clap::{Args, Subcommand, ValueEnum};
 use gitmoji_triangle::attribution::{Fence, has_harness_footer};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -157,19 +158,39 @@ fn marked_prose(visible: &str) -> Option<&str> {
         .or_else(|| after_chip.strip_prefix(' '))
 }
 
-// Keep block Markdown at the beginning of its own paragraph. A terminal newline
-// from a body file is part of the fingerprint, but does not make prose multiline.
-fn chip_separator(body: &str) -> &'static str {
-    let line = body.trim_end_matches('\n');
-    let digits = |c: char| c.is_ascii_digit();
-    let plain_number =
-        line.starts_with(digits) && !line.trim_start_matches(digits).starts_with(['.', ')']);
-    if (line.starts_with(char::is_alphabetic) || plain_number) && !line.contains(['|', '\n', '\r'])
-    {
-        " "
-    } else {
-        "\n\n"
+// Prepending the chip to a heading, list or table can silently change how GitHub
+// renders the author's Markdown. Require visible prose on the first physical line.
+fn has_opening_prose(body: &str) -> bool {
+    let options = Options::ENABLE_GFM
+        | Options::ENABLE_TABLES
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_MATH;
+    let mut events = Parser::new_ext(body, options).into_offset_iter();
+    if !matches!(events.next(), Some((Event::Start(Tag::Paragraph), range)) if range.start == 0) {
+        return false;
     }
+    let first_line_end = body.find(['\r', '\n']).unwrap_or(body.len());
+    let mut image_depth = 0;
+    for (event, range) in events {
+        if range.start >= first_line_end {
+            break;
+        }
+        match event {
+            Event::End(TagEnd::Paragraph) | Event::SoftBreak | Event::HardBreak => break,
+            Event::Start(Tag::Image { .. }) => image_depth += 1,
+            Event::End(TagEnd::Image) => image_depth -= 1,
+            // Image alt text and invisible HTML comments do not supply a lead.
+            Event::Text(text) | Event::Code(text) | Event::InlineMath(text)
+                if image_depth == 0 && !text.trim().is_empty() =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 fn split_record(body: &str) -> Result<Option<(&str, Metadata)>> {
@@ -328,10 +349,11 @@ fn sign(body: &str, harness: Option<&str>, public: bool) -> Result<String> {
         !fence.is_open(),
         "close the Markdown code fence before signing; it would expose the lineage block"
     );
-    encode(
-        &format!("{CHIP}{}{body}", chip_separator(&body)),
-        discover(harness, public)?,
-    )
+    ensure!(
+        has_opening_prose(&body),
+        "add an opening sentence on the first line before any heading, list, table or other Markdown block"
+    );
+    encode(&format!("{CHIP} {body}"), discover(harness, public)?)
 }
 
 fn stdin() -> Result<String> {
@@ -412,13 +434,10 @@ mod tests {
 
     #[test]
     fn offline_signature_round_trip_preserves_markdown_and_line_endings() -> Result<()> {
-        let input = "# Changes\r\n\r\nA deliberate line break.  \r\nAnother.\r\n\r\n";
+        let input = "The change is ready.\r\n\r\n# Changes\r\n\r\nA deliberate line break.  \r\nAnother.\r\n\r\n";
         let signed = sign(input, Some("custom-agent"), true)?;
         let (visible, _) = split_record(&signed)?.context("marked record")?;
-        assert_eq!(
-            visible,
-            format!("{CHIP}\n\n{}", input.replace("\r\n", "\n"))
-        );
+        assert_eq!(visible, format!("{CHIP} {}", input.replace("\r\n", "\n")));
         assert_eq!(inspect(&signed).status, Status::Verified);
         assert_eq!(
             inspect(&signed.replace('\n', "\r\n")).status,
@@ -434,11 +453,21 @@ mod tests {
     }
 
     #[test]
-    fn simple_replies_use_an_inline_chip_and_blocks_keep_their_markdown_context() -> Result<()> {
+    fn new_signatures_keep_the_chip_with_the_opening_prose() -> Result<()> {
         for body in [
             "Fixed in abc123.",
             "2 checks passed.\n",
             "Changes landed.\n\n",
+            "First line\ncontinues here.\n\n# Details\n\n- First item",
+            "**First**, check the logs.",
+            "[The change](https://example.test) is ready.",
+            "`check` passed.",
+            "✅ All checks passed.",
+            "A | B",
+            "The fix is ready. <!-- rationale -->",
+            "Here is the fix.\n\n```suggestion\nnew value\n```",
+            "The matrix follows.\n\nOne | Two\n--- | ---\nA | B",
+            "[Details][ref] are available.\n\n[ref]: https://example.test",
         ] {
             let signed = sign(body, Some("example"), true)?;
             assert_eq!(
@@ -447,25 +476,50 @@ mod tests {
             );
             assert_eq!(inspect(&signed).status, Status::Verified);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn fresh_block_first_bodies_ask_for_an_opening_sentence() -> Result<()> {
         for body in [
             "# Heading",
+            "Title\n=====",
+            "First line\nsecond line\n-----",
             "- first",
             "1. first",
             "3) first",
+            "- [ ] unchecked",
             "> quote",
+            "> [!NOTE]\n> Read this.",
             "    code",
-            "A | B",
-            "`literal`",
-            "First.\nSecond.",
-            "[link]: https://example.test",
+            "---",
+            "```suggestion\nreplacement\n```",
+            "A | **B**\n--- | ---\nC | D",
+            "| A | B |\n|:---|---:|",
+            "<!-- template -->\n\nActual prose.",
+            "<details>\n<summary>Details</summary>\n</details>",
+            "[ref]: https://example.test\n\nActual prose.",
+            "[^1]: Footnote text.\n\nActual prose.",
+            "![image](https://example.test/image.png)",
+            "\n\nActual prose.",
+            "  \nActual prose.",
         ] {
-            let signed = sign(body, Some("example"), true)?;
-            assert_eq!(
-                marked_parts(&signed).context("paragraph parts")?.0,
-                format!("{CHIP}\n\n{body}")
+            let error = sign(body, Some("example"), true)
+                .err()
+                .with_context(|| format!("unexpectedly signed a block-first post: {body}"))?;
+            assert!(
+                error.to_string().contains("opening sentence"),
+                "{body}: {error}"
             );
-            assert_eq!(inspect(&signed).status, Status::Verified);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn existing_v1_signatures_keep_their_original_layout() -> Result<()> {
+        let block_v1 = encode(&format!("{CHIP}\n\n# Original heading"), sample())?;
+        assert_eq!(inspect(&block_v1).status, Status::Verified);
+        assert_eq!(sign(&block_v1, None, false)?, block_v1);
         let paragraph_v1 = encode(&format!("{CHIP}\n\nFixed in abc123."), sample())?;
         assert_eq!(inspect(&paragraph_v1).status, Status::Verified);
         assert_eq!(sign(&paragraph_v1, None, false)?, paragraph_v1);
@@ -525,8 +579,7 @@ mod tests {
 
     #[test]
     fn documentation_can_quote_the_protocol() -> Result<()> {
-        let example =
-            "```markdown\n<!-- gitmoji-post:v99 ... -->\n```\n\n> <!-- gitmoji-post:v1 … -->";
+        let example = "Here is a protocol example.\n\n```markdown\n<!-- gitmoji-post:v99 ... -->\n```\n\n> <!-- gitmoji-post:v1 … -->";
         let signed = sign(example, Some("example"), true)?;
         assert_eq!(inspect(&signed).status, Status::Verified);
         assert!(sign("```md\nliteral", Some("example"), true).is_err());
