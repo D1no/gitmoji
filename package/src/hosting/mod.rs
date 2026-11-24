@@ -245,8 +245,13 @@ impl Client {
             .context("missing GitHub GraphQL result")
     }
 
+    /// Read a resource within the configured repository.
+    pub(crate) fn get(&self, path: &str) -> Result<Value> {
+        self.request("GET", &format!("{}/{path}", self.rest), None)
+    }
+
     pub(crate) fn get_pull(&self, number: u64) -> Result<Value> {
-        self.request("GET", &format!("{}/pulls/{number}", self.rest), None)
+        self.get(&format!("pulls/{number}"))
     }
 
     pub(crate) fn update_title(&self, number: u64, title: &str) -> Result<Value> {

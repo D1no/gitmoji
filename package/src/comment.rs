@@ -1,5 +1,6 @@
 //! Mark agent-written GitHub posts and compare their raw Markdown with the recorded fingerprint.
 
+mod trace;
 
 use std::io::{self, Read as _};
 
@@ -49,6 +50,8 @@ enum Action {
         #[arg(long)]
         json: bool,
     },
+    /// Trace the attribution of one GitHub issue, PR, review or specific comment.
+    Trace(trace::TraceArgs),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -374,6 +377,7 @@ pub(crate) fn run(args: CommentArgs) -> Result<u8> {
             }
             Ok(if accepted { 0 } else { 1 })
         }
+        Action::Trace(args) => trace::run(args),
     }
 }
 
