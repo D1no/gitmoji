@@ -58,7 +58,7 @@ A later 🏁 commit records the outcome on the same ticket.
 
 When a repository changes its Gitmoji pin, record the adopted version in a standalone commit.
 
-- 🔺 gitmoji `0.22.0`: check commits with the same vocabulary in CI and locally
+- 🔺 gitmoji `0.23.0`: check commits with the same vocabulary in CI and locally
 
 ### Automated job
 

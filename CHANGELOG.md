@@ -2,6 +2,14 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.23.0 (24 November 2026)
+
+- Use `gitmoji comment sign` to mark an agent-written issue or pull request description, thread comment, review or inline reply. Short replies show the robot chip beside the prose. Full session lineage is opt-in with `--full-lineage`. A repository that copies PR descriptions into merge messages can also retain that metadata in Git history. [Signing and privacy](https://github.com/D1no/gitmoji/blob/v0.23.0/skills/gitmoji/references/agent-posts.md)
+- Check the fingerprint offline with `gitmoji comment check`. For a GitHub or GitHub Enterprise permalink, `gitmoji comment trace URL` reports the checksum and visible edit history. A provisional workflow update keeps the original fingerprint so the edit remains observable.
+- Claude Code and Codex can check supported GitHub CLI and MCP posts before publication with `gitmoji comment hook`. Duplicate harness credits produce an advisory. [Hook installation and coverage](https://github.com/D1no/gitmoji/blob/v0.23.0/skills/gitmoji/references/post-hooks.md)
+- The repository README now generates its vocabulary, command overview and worked examples from project sources. Its three-column vocabulary shows how an area pairs with a behavior or intent.
+- To adopt, set `[vocabulary].version` to `"0.23.0"`, run the standalone installer with `--pinned`, then run `gitmoji init` and `gitmoji doctor`. To enable pre-post checks, merge the hook entry from the installation guide into your harness settings.
+
 ## 0.22.0 (23 November 2026)
 
 - Mark an authored review response with a heading such as ``👌 <`🧩🐛`> #42 (checkout): reserve the last item once``. The issue, scope, reason and signature follow the project’s usual rules. The hook understands `:ok_hand:` while typing. The stored prefix is 👌.
