@@ -2,6 +2,11 @@
 
 The CLI, skill, and bundled vocabulary share one release number.
 
+## 0.24.0 (24 November 2026)
+
+- Agent posts now put the robot chip beside the opening words of both short replies and longer issues, PRs and reviews. When a new draft starts with a heading, list or code block, add a short opening paragraph before signing. Gitmoji keeps the headings and their section links intact. Existing v1 posts with either chip layout still verify. [Examples and template guidance](https://github.com/D1no/gitmoji/blob/v0.24.0/skills/gitmoji/references/agent-posts.md)
+- To adopt, set `[vocabulary].version` to `"0.24.0"`, run the pinned installer, then run `gitmoji init` and `gitmoji doctor`.
+
 ## 0.23.0 (24 November 2026)
 
 - Use `gitmoji comment sign` to mark an agent-written issue or pull request description, thread comment, review or inline reply. Short replies show the robot chip beside the prose. Full session lineage is opt-in with `--full-lineage`. A repository that copies PR descriptions into merge messages can also retain that metadata in Git history. [Signing and privacy](https://github.com/D1no/gitmoji/blob/v0.23.0/skills/gitmoji/references/agent-posts.md)
