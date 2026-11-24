@@ -201,6 +201,54 @@ fn primary_review_and_ordered_findings_are_git_trailers_for_humans_and_agents() 
 }
 
 #[test]
+fn comment_sign_exposes_session_lineage_only_when_requested() {
+    let f = Fixture::new();
+    let session = "private-session";
+    f.log(
+        "codex/sessions/rollout-post.jsonl",
+        &[
+            json!({"type":"session_meta","payload":{"id":session}}),
+            ctx("fixture-model", "high", "t"),
+        ],
+    );
+    let draft = f.path("draft.md");
+    let signed = f.path("signed.md");
+    fs::write(&draft, "The next run can proceed.").unwrap();
+    for full in [false, true] {
+        let mut sign = f.command(env!("CARGO_BIN_EXE_gitmoji"));
+        sign.args(["comment", "sign", "--harness", "codex"])
+            .env("CODEX_HOME", f.path("codex"))
+            .env("CODEX_THREAD_ID", session);
+        if full {
+            sign.arg("--full-lineage");
+        }
+        let result = sign
+            .stdin(fs::File::open(&draft).unwrap())
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        fs::write(&signed, result.stdout).unwrap();
+        let check = f
+            .command(env!("CARGO_BIN_EXE_gitmoji"))
+            .args(["comment", "check", "--json"])
+            .stdin(fs::File::open(&signed).unwrap())
+            .output()
+            .unwrap();
+        assert!(check.status.success());
+        let report: Value = serde_json::from_slice(&check.stdout).unwrap();
+        assert_eq!(report["status"], "verified");
+        let lineage = &report["lineage"];
+        assert_eq!(lineage["model"], "fixture-model");
+        assert_eq!(lineage["effort"], "high");
+        assert_eq!(lineage["session"].as_str(), full.then_some(session));
+    }
+}
+
+#[test]
 fn codex_uses_owned_rollouts_and_the_work_since_the_last_signed_commit() {
     let f = Fixture::new();
     let web = event(

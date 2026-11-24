@@ -4,6 +4,7 @@
 //! The vocabulary lives in `vocabulary.toml` and is compiled into the binary, so the
 //! checker, the guide, the agent skill and the website all say the same thing.
 
+pub mod attribution;
 pub mod caption;
 pub mod check;
 pub mod config;

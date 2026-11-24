@@ -581,6 +581,18 @@ fn check_with_source(
             credited.push((format!("Co-authored-by: {}", record.value), value));
         }
     }
+    let block = closing(body);
+    if credited.is_empty() {
+        let prose: Vec<_> = body
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !block.lines.contains(index))
+            .map(|(_, line)| *line)
+            .collect();
+        if crate::attribution::has_harness_footer(&prose.join("\n")) {
+            report.warnings.push("The commit ends with a tool attribution line. Remove it if the harness inserted it.".to_owned());
+        }
+    }
     for (line, _) in credited {
         report_at(
             &mut report,
@@ -609,7 +621,6 @@ fn check_with_source(
         .map(|(index, line)| (index, line.trim()))
         .filter(|(_, line)| !line.is_empty())
         .collect();
-    let block = closing(body);
     let signed = block.signed;
     // What the author wrote: every line that is not empty and not in the closing block.
     let content: Vec<&(usize, &str)> = written
@@ -922,6 +933,24 @@ mod tests {
         let old = "🧩🐛 #1 (feed): retain the selected item\n\nReview: maintainer sign-off\nReview: QA sign-off\nAddresses: UX-12";
         let report = check_with(human, old, None);
         assert!(report.passed() && !report.reading.unwrap().starts_with("Review response: "));
+    }
+
+    #[test]
+    fn generated_credit_above_the_signature_is_advisory() {
+        let message = "🧩👔 #1 (server): retry once\n\nRetry transient failures.\n\nMade with Cursor\n\n_\nexample-model (high)\nCursor";
+        let report = check(message);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|line| line.contains("tool attribution"))
+        );
+        assert!(
+            !check(&message.replace("Made with Cursor", "> Made with Cursor"))
+                .warnings
+                .iter()
+                .any(|line| line.contains("tool attribution"))
+        );
     }
 
     #[test]
