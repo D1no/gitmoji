@@ -37,6 +37,14 @@ const REFERENCE: &str = "references/vocabulary.txt";
 const SKILL: &[(&str, &str)] = &[
     ("SKILL.md", include_str!("../../skills/gitmoji/SKILL.md")),
     (
+        "references/agent-posts.md",
+        include_str!("../../skills/gitmoji/references/agent-posts.md"),
+    ),
+    (
+        "references/post-hooks.md",
+        include_str!("../../skills/gitmoji/references/post-hooks.md"),
+    ),
+    (
         "references/dependabot.md",
         include_str!("../../skills/gitmoji/references/dependabot.md"),
     ),
