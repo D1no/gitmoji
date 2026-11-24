@@ -1,6 +1,17 @@
 # Mark agent-written posts on GitHub
 
-When a human and an agent post using the same GitHub account, put a visible `🤖` chip before the agent's text. Use it on issue and PR **bodies**, conversation comments, review summaries and inline review comments or replies. A short prose reply shows the chip on the same line. Structured or multiline Markdown starts below the chip so headings, lists and code keep their formatting. Titles retain their normal format. Gitmoji signs the Markdown locally. You choose when and where to send it.
+When a human and an agent post using the same GitHub account, put a visible `🤖` chip before the agent's text. Use it on issue and PR **bodies**, conversation comments, review summaries and inline review comments or replies. Titles retain their normal format. Gitmoji signs the Markdown locally. You choose when and where to send it.
+
+Start the draft with the point you want the reader to see. Gitmoji places the chip beside those words for a one-line reply or a full issue. If a draft opens with a heading, checklist, or code suggestion, add a brief introduction above it. For example, a signed release handoff reads:
+
+> `🤖` The release is ready to install.
+>
+> ## Upgrade steps
+>
+> 1. Install the pinned release.
+> 2. Run the project checks.
+
+GitHub headings start on their own line and can follow a paragraph. Sign the final issue or PR body. Keep repository template files, YAML front matter and issue-form definitions in their required format. An issue form produces editable Markdown after submission. If a project’s own automation requires a particular first line, check that rule before adopting this layout. Previously signed posts with a chip on its own line still verify. [GitHub Markdown headings](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#headings) · [GitHub issue forms](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms)
 
 ```sh
 gitmoji comment sign < draft.md > signed.md
