@@ -390,7 +390,10 @@ mod tests {
         assert_eq!(read_file(name)?.len(), MAX_FILE_BYTES);
         fs::write(&file, vec![b'a'; MAX_FILE_BYTES + 1])?;
         assert_eq!(
-            read_file(name).unwrap_err().to_string(),
+            read_file(name)
+                .err()
+                .context("oversized input was accepted")?
+                .to_string(),
             "GitHub body file exceeds 1 MiB"
         );
         Ok(())
