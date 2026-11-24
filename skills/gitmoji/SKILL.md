@@ -72,6 +72,10 @@ for the whole vocabulary, and tell the person that the command is missing.
 | You want to review breaking changes on this branch | `gitmoji log '💥' trunk..HEAD` (substitute any vocabulary emoji) |
 | The hook says the repository adopted another version | Read what changed at the address it gives, and tell the user before you change the settings |
 
+## Posting on GitHub
+
+When writing an issue or PR description, a conversation comment, a review, or a line reply as an agent, prepare the Markdown with `gitmoji comment sign`, verify the raw file with `gitmoji comment check`, then send that exact file. Use the ordinary PR title workflow for titles. A person writing their own comment can post directly. [Signing, tracing and harness attribution](references/agent-posts.md) · [Pre-post hooks](references/post-hooks.md)
+
 ## Before you write code: plan the commits
 
 Read the ticket and write the subjects you expect to make, as a list. Each one is a

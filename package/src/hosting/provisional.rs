@@ -165,6 +165,15 @@ fn block(ticket: u64) -> String {
 }
 
 fn reconcile(body: &str, ticket: Option<u64>) -> Result<String> {
+    if let Some((visible, footer)) = crate::comment::marked_parts(body) {
+        // A workflow can edit a description, but only its author can attest to new text.
+        let updated = reconcile_block(visible, ticket)?;
+        return Ok(format!("{updated}{footer}"));
+    }
+    reconcile_block(body, ticket)
+}
+
+fn reconcile_block(body: &str, ticket: Option<u64>) -> Result<String> {
     let Some(start) = body.find(START) else {
         ensure!(
             !body.contains(END),

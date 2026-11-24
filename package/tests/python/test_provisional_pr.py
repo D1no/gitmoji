@@ -122,6 +122,21 @@ class ProvisionalTests(unittest.TestCase):
         self.assertEqual(self.run_cli("--publish-status")["policy"], "ordinary")
         self.assertEqual(self.state["pr"]["body"], "Author notes")
 
+    def test_provisional_edits_keep_the_original_fingerprint(self):
+        signed = subprocess.run([self.binary, "comment", "sign", "--harness", "example"],
+                                input="Author notes", text=True, capture_output=True, check=True).stdout
+        self.state["pr"]["body"] = signed
+        self.run_cli("--publish-status")
+        edited = self.state["pr"]["body"]
+        self.assertTrue(edited.endswith(signed.split("\n\n")[-1]))
+        report = subprocess.run([self.binary, "comment", "check", "--json"],
+                                input=edited, text=True, capture_output=True)
+        self.assertEqual(report.returncode, 1)
+        self.assertEqual(json.loads(report.stdout)["status"], "edited")
+        self.set_head(self.state["base"], "🎨💄 #42 (app): settle the design")
+        self.run_cli("--publish-status")
+        self.assertEqual(self.state["pr"]["body"], signed)
+
     def test_review_responses_keep_their_own_provisional_ticket(self):
         self.set_head(self.state["base"], "👌 <`🎨💄🚧`> #42 (app): keep the preview readable")
         checked = self.run_cli("--check")

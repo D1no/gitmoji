@@ -62,14 +62,8 @@ pub(crate) fn render(
         addresses.iter().all(|url| valid_review_address(url)),
         ADDRESSES_LINK_ERROR
     );
-    let harness = match harness {
-        Some(chosen) => Some(chosen),
-        None => Harness::detected()?,
-    };
-    let mut lines = match harness {
-        Some(Harness::ClaudeCode) => claude::read().lines(),
-        Some(Harness::Codex) => codex::read().lines(),
-        Some(Harness::Antigravity) => antigravity::read().lines(),
+    let mut lines = match discover(harness)? {
+        Some(signature) => signature.lines(),
         None if review.is_some() => Vec::new(),
         None => {
             bail!("no agent session detected; select --harness claude-code, codex or antigravity")
@@ -85,6 +79,63 @@ pub(crate) fn render(
         }
     }
     Ok(lines.join("\n"))
+}
+
+fn discover(harness: Option<Harness>) -> Result<Option<Signature>> {
+    let selected = match harness {
+        Some(harness) => Some(harness),
+        None => Harness::detected()?,
+    };
+    Ok(selected.map(|harness| match harness {
+        Harness::ClaudeCode => claude::read(),
+        Harness::Codex => codex::read(),
+        Harness::Antigravity => antigravity::read(),
+    }))
+}
+
+pub(crate) fn comment_lineage(
+    harness: Option<Harness>,
+    public: bool,
+) -> Result<crate::comment::Lineage> {
+    let signature = discover(harness)?
+        .ok_or_else(|| anyhow::anyhow!("no agent session detected; select --harness"))?;
+    let mut lineage = crate::comment::Lineage {
+        harness: signature.harness.to_owned(),
+        model: signature.model.model,
+        effort: signature.model.effort,
+        role: None,
+        session: None,
+        sub_agents: Vec::new(),
+        team: Vec::new(),
+        research: None,
+    };
+    if !public {
+        lineage.role = field(&signature.name).map(str::to_owned);
+        lineage.session = field(&signature.session).map(str::to_owned);
+        lineage.team = signature.team.into_iter().collect();
+        lineage.sub_agents = signature
+            .helpers
+            .into_iter()
+            .map(|(helper, count)| crate::comment::SubAgent {
+                model: helper.model,
+                effort: helper.effort,
+                count,
+            })
+            .collect();
+        let Research {
+            searches,
+            pages,
+            docs,
+        } = signature.research;
+        if searches > 0 || pages > 0 || docs > 0 {
+            lineage.research = Some(crate::comment::Research {
+                searches,
+                pages,
+                docs,
+            });
+        }
+    }
+    Ok(lineage)
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]

@@ -224,6 +224,7 @@ Linux and macOS releases cover arm64 and x86_64.
 
 **Review and merge**
 
+- `gitmoji comment` — Mark agent-written GitHub posts, check their fingerprints, and trace their source
 - `gitmoji pr-title` — Synchronize a GitHub pull request title from its incoming commits
 - `gitmoji merge-caption` — Print the synchronized PR title for the authored commits arriving on its base
 - `gitmoji merge-message` — Caption Git’s generated local branch merge message, or preview a stored merge

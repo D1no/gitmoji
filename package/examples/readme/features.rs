@@ -52,6 +52,7 @@ fn from_help(help: &str) -> Result<String> {
         (
             "Review and merge",
             &[
+                "comment",
                 "pr-title",
                 "merge-caption",
                 "merge-message",

@@ -15,6 +15,7 @@ use gitmoji_triangle::staged::Staged;
 use gitmoji_triangle::vocabulary::Vocabulary;
 
 mod changelog;
+mod comment;
 mod debt;
 mod doctor;
 mod history;
@@ -82,6 +83,8 @@ enum Action {
         #[arg(long, requires = "review", value_name = "URL")]
         addresses: Vec<String>,
     },
+    /// Mark agent-written GitHub posts, check their fingerprints, and trace their source.
+    Comment(comment::CommentArgs),
     /// Synchronize a GitHub pull request title from its incoming commits.
     PrTitle(hosting::TitleArgs),
     /// Check a provisional PR’s follow-up issue or synchronize its PR body.
@@ -374,6 +377,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         );
         return Ok(ExitCode::SUCCESS);
     }
+    if let Action::Comment(args) = cli.command {
+        return Ok(ExitCode::from(comment::run(args)?));
+    }
     if let Action::PrTitle(args) = cli.command {
         hosting::sync_title(args)?;
         return Ok(ExitCode::SUCCESS);
@@ -659,6 +665,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         | Action::Log { .. }
         | Action::Pin
         | Action::Signature { .. }
+        | Action::Comment(_)
         | Action::PrTitle(_)
         | Action::ProvisionalPr(_)
         | Action::GithubMerge(_)
